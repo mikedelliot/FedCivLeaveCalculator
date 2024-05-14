@@ -1,4 +1,4 @@
-﻿<#
+<#
 Annual Leave Fact Sheet: https://www.opm.gov/policy-data-oversight/pay-leave/leave-administration/fact-sheets/annual-leave/
 Sick Leave Fact Sheet: https://www.opm.gov/policy-data-oversight/pay-leave/leave-administration/fact-sheets/sick-leave-general-information/
 Leave Year Beginning/Ending Dates: https://www.opm.gov/policy-data-oversight/pay-leave/leave-administration/fact-sheets/leave-year-beginning-and-ending-dates/
@@ -89,17 +89,17 @@ $Script:DisplayAfterEachPP    = $False
 $Script:DisplayHighsAndLows   = $False
 
 $AnnualLeaveCustomObject = [PSCustomObject] @{
-    Name      = [String]"Annual"
-    Balance   = [Int32]0
-    Threshold = [Int32]0
-    Static    = [Boolean]$True
+    Name      = "Annual"
+    Balance   = 0
+    Threshold = 0
+    Static    = $True
 }
 
 $SickLeaveCustomObject = [PSCustomObject] @{
-    Name      = [String]"Sick"
-    Balance   = [Int32]0
-    Threshold = [Int32]0
-    Static    = [Boolean]$True
+    Name      = "Sick"
+    Balance   = 0
+    Threshold = 0
+    Static    = $True
 }
 
 $Script:LeaveBalances.Add($AnnualLeaveCustomObject)
@@ -522,7 +522,8 @@ function LoadConfig
                         #One digit 0-4                         [0-4]
                         #Line end                                    $
                         if($Key -match "^PayPeriodDay(?:[1-9]|1[0-4])$" -eq $False -and
-                           $LoadedConfig[6][$Key] -isnot [Int32] -and
+                          ($LoadedConfig[6][$Key] -isnot [Int32] -and
+                           $LoadedConfig[6][$Key] -isnot [Decimal]) -and
                            $LoadedConfig[6][$Key] -lt 0 -and
                            $LoadedConfig[6][$Key] -gt 24)
                         {
@@ -569,11 +570,12 @@ function LoadConfig
                     $Errors = $True
                 }
 
-                if($LoadedConfig[9] -is [Int32] -and
-                   $LoadedConfig[9] -ge 0 -and
-                   $LoadedConfig[9] -le $Script:MaximumAnnual) #Load AnnualGoal Int32
+                if(($LoadedConfig[9] -is [Int32] -or
+                    $LoadedConfig[9] -is [Decimal]) -and
+                    $LoadedConfig[9] -ge 0 -and
+                    $LoadedConfig[9] -le $Script:MaximumAnnual) #Load AnnualGoal Int32
                 {
-                    $Script:AnnualGoal = $LoadedConfig[9]
+                    $Script:AnnualGoal = [Int32]$LoadedConfig[9]
                 }
 
                 else
@@ -581,11 +583,12 @@ function LoadConfig
                     $Errors = $True
                 }
 
-                if($LoadedConfig[10] -is [Int32] -and
-                   $LoadedConfig[10] -ge 0 -and
-                   $LoadedConfig[10] -le $Script:MaximumSick) #Load SickGoal Int32
+                if(($LoadedConfig[10] -is [Int32] -or
+                    $LoadedConfig[10] -is [Decimal]) -and
+                    $LoadedConfig[10] -ge 0 -and
+                    $LoadedConfig[10] -le $Script:MaximumSick) #Load SickGoal Int32
                 {
-                    $Script:SickGoal = $LoadedConfig[10]
+                    $Script:SickGoal = [Int32]$LoadedConfig[10]
                 }
 
                 else
@@ -593,9 +596,10 @@ function LoadConfig
                     $Errors = $True
                 }
 
-                if($LoadedConfig[11] -is [Double] -and
+                if(($LoadedConfig[11] -is [Double] -or
+                    $LoadedConfig[11] -is [Decimal]) -and
                    $LoadedConfig[11] -ge 0 -and
-                   $LoadedConfig[11] -lt 1) #Load AnnualDecimal Int32
+                   $LoadedConfig[11] -lt 1) #Load AnnualDecimal Double
                 {
                     $Script:AnnualDecimal = $LoadedConfig[11]
                 }
@@ -605,9 +609,10 @@ function LoadConfig
                     $Errors = $True
                 }
 
-                if($LoadedConfig[12] -is [Double] -and
+                if(($LoadedConfig[12] -is [Double] -or
+                    $LoadedConfig[12] -is [Decimal]) -and
                    $LoadedConfig[12] -ge 0 -and
-                   $LoadedConfig[12] -lt 1) #Load SickDecimal Int32
+                   $LoadedConfig[12] -lt 1) #Load SickDecimal Double
                 {
                     $Script:SickDecimal = $LoadedConfig[12]
                 }
@@ -656,9 +661,10 @@ function LoadConfig
                 {
                     if($LoadedConfig[$Index].Name -eq "Annual")
                     {
-                        if($LoadedConfig[$Index].Balance -is [Decimal] -and
-                           $LoadedConfig[$Index].Balance -ge 0 -and
-                           $LoadedConfig[$Index].Balance -le $Script:MaximumAnnual)
+                        if(($LoadedConfig[$Index].Balance -is [Decimal] -or
+                            $LoadedConfig[$Index].Balance -is [Int32]) -and
+                            $LoadedConfig[$Index].Balance -ge 0 -and
+                            $LoadedConfig[$Index].Balance -le $Script:MaximumAnnual)
                         {
                             $Script:LeaveBalances[0].Balance = [Int32]$LoadedConfig[$Index].Balance
                         }
@@ -668,9 +674,10 @@ function LoadConfig
                             $Errors = $True
                         }
 
-                        if($LoadedConfig[$Index].Threshold -is [Decimal] -and
-                           $LoadedConfig[$Index].Threshold -ge 0 -and
-                           $LoadedConfig[$Index].Threshold -le $Script:MaximumAnnual)
+                        if(($LoadedConfig[$Index].Threshold -is [Decimal] -or
+                            $LoadedConfig[$Index].Threshold -is [Int32]) -and
+                            $LoadedConfig[$Index].Threshold -ge 0 -and
+                            $LoadedConfig[$Index].Threshold -le $Script:MaximumAnnual)
                         {
                             $Script:LeaveBalances[0].Threshold = [Int32]$LoadedConfig[$Index].Threshold
                         }
@@ -683,9 +690,10 @@ function LoadConfig
 
                     elseif($LoadedConfig[$Index].Name -eq "Sick")
                     {
-                        if($LoadedConfig[$Index].Balance -is [Decimal] -and
-                           $LoadedConfig[$Index].Balance -ge 0 -and
-                           $LoadedConfig[$Index].Balance -le $Script:MaximumSick)
+                        if(($LoadedConfig[$Index].Balance -is [Decimal] -or
+                            $LoadedConfig[$Index].Balance -is [Int32]) -and
+                            $LoadedConfig[$Index].Balance -ge 0 -and
+                            $LoadedConfig[$Index].Balance -le $Script:MaximumSick)
                         {
                             $Script:LeaveBalances[1].Balance = [Int32]$LoadedConfig[$Index].Balance
                         }
@@ -695,9 +703,10 @@ function LoadConfig
                             $Errors = $True
                         }
 
-                        if($LoadedConfig[$Index].Threshold -is [Decimal] -and
-                           $LoadedConfig[$Index].Threshold -ge 0 -and
-                           $LoadedConfig[$Index].Threshold -le $Script:MaximumSick)
+                        if(($LoadedConfig[$Index].Threshold -is [Decimal] -or
+                            $LoadedConfig[$Index].Threshold -is [Int32]) -and
+                            $LoadedConfig[$Index].Threshold -ge 0 -and
+                            $LoadedConfig[$Index].Threshold -le $Script:MaximumSick)
                         {
                             $Script:LeaveBalances[1].Threshold = [Int32]$LoadedConfig[$Index].Threshold
                         }
@@ -722,18 +731,19 @@ function LoadConfig
                            $LoadedConfig[$Index].Name.Trim() -match "[^A-Za-z0-9 ]" -eq $False -and
                            $LoadedConfig[$Index].Name.ToLower().Trim() -ne "annual" -and
                            $LoadedConfig[$Index].Name.ToLower().Trim() -ne "sick" -and
-                           $LoadedConfig[$Index].Balance -is [Decimal] -and #For some reason after importing the file the Int32 is now a Decimal. We cast it back later.
+                          ($LoadedConfig[$Index].Balance -is [Decimal] -or
+                           $LoadedConfig[$Index].Balance -is [Int32]) -and
                            $LoadedConfig[$Index].Balance -ge 0 -and
                            $LoadedConfig[$Index].Balance -le $Script:MaximumSick -and
                            $LoadedConfig[$Index].Expires -is [Boolean] -and
                            $LoadedConfig[$Index].ExpiresOn -is [DateTime])
                         {
                             $NewLeaveBalance = [PSCustomObject] @{
-                                Name      = [String]$LoadedConfig[$Index].Name.Trim()
+                                Name      = $LoadedConfig[$Index].Name.Trim()
                                 Balance   = [Int32]$LoadedConfig[$Index].Balance
-                                Expires   = [Boolean]$LoadedConfig[$Index].Expires
-                                ExpiresOn = [DateTime]$LoadedConfig[$Index].ExpiresOn.Date
-                                Static    = [Boolean]$False
+                                Expires   = $LoadedConfig[$Index].Expires
+                                ExpiresOn = $LoadedConfig[$Index].ExpiresOn.Date
+                                Static    = $False
                             }
                             
                             $Script:LeaveBalances.Add($NewLeaveBalance)
@@ -838,7 +848,7 @@ function LoadConfig
                                $LoadedConfig[$Index].HoursHashTable[$Date.ToString("MM/dd/yyyy")] -ge 0 -and
                                $LoadedConfig[$Index].HoursHashTable[$Date.ToString("MM/dd/yyyy")] -le 24) #If the hashtable value exists and is valid.
                             {
-                                $NewProjectedLeave.HoursHashTable[$Date.ToString("MM/dd/yyyy")] = $LoadedConfig[$Index].HoursHashTable[$Date.ToString("MM/dd/yyyy")]
+                                $NewProjectedLeave.HoursHashTable[$Date.ToString("MM/dd/yyyy")] = [Int32]$LoadedConfig[$Index].HoursHashTable[$Date.ToString("MM/dd/yyyy")]
                             }
 
                             else
@@ -860,8 +870,11 @@ function LoadConfig
                     $Index++
                 }
 
-                #Sort the projected leave to prevent any funny business.
-                $Script:ProjectedLeave = [System.Collections.Generic.List[PSCustomObject]] ($Script:ProjectedLeave | Sort-Object -Property "StartDate", "EndDate", "LeaveBank")
+                #Sort the projected leave to prevent any funny business. Only sort if there is more than one entry.
+                if($Script:ProjectedLeave.Count -gt 1)
+                {
+                    $Script:ProjectedLeave = [System.Collections.Generic.List[PSCustomObject]] ($Script:ProjectedLeave | Sort-Object -Property "StartDate", "EndDate", "LeaveBank")
+                }
             }
 
             else
@@ -1033,7 +1046,7 @@ function PopulateOutputFormRichTextBox
         $TitleString = "Projection to Reach Goals"
     }
 
-    $TitleString += "`n"
+    $TitleString += ":`n"
 
     #Add the title.
     OutputFormAppendText -Text $TitleString -Alignment "Center" -FontSize ($Script:OutputForm.Controls["OutputRichTextBox"].Font.Size + 2) -FontStyle "Bold"
@@ -1163,7 +1176,6 @@ function PopulateOutputFormRichTextBox
                                 if($Count -gt 1)
                                 {
                                     $LeaveExpiresOnList.Remove($LeaveBalance.ExpiresOn.ToString("MM/dd/yyyy"))
-                                    Write-Host "Flag"
                                 }
 
                                 $LeaveBalancesCopy.RemoveAt($BalanceIndex)
@@ -1962,7 +1974,7 @@ function UpdateProjectedLeaveDatesIfLeaveBalanceExpiresOrChangesOrDeleted
             }
         }
     }
-
+    
     return $ProjectedLeaveUpdated
 }
 
@@ -2130,11 +2142,11 @@ function MainFormLeaveBalanceListBoxDoubleClick
 function MainFormBalanceAddButtonClick
 {
     $NewLeaveBalance = [PSCustomObject] @{
-    Name      = [String]"New Leave"
-    Balance   = [Int32]0
-    Expires   = [Boolean]$False
-    ExpiresOn = [DateTime]$Script:CurrentDate
-    Static    = [Boolean]$False
+    Name      = "New Leave"
+    Balance   = 0
+    Expires   = $False
+    ExpiresOn = $Script:CurrentDate
+    Static    = $False
     }
 
     $Script:LeaveBalances.Add($NewLeaveBalance)
@@ -2294,9 +2306,9 @@ function MainFormProjectedAddButtonClick
     $Script:UnsavedProjectedLeave = $True
     
     $NewProjectedLeave = [PSCustomObject] @{
-        LeaveBank      = [String]"Annual"
-        StartDate      = [DateTime]$Script:CurrentDate
-        EndDate        = [DateTime]$Script:CurrentDate
+        LeaveBank      = "Annual"
+        StartDate      = $Script:CurrentDate
+        EndDate        = $Script:CurrentDate
         HoursHashTable = @{
         $Script:CurrentDate.ToString("MM/dd/yyyy") = GetHoursForWorkDay -Day $Script:CurrentDate
         }
@@ -3115,7 +3127,8 @@ function EditLeaveBalanceFormOkButtonClick
         $Script:MainForm.Controls["LeavePanel"].Controls["BalanceListBox"].SelectedIndex = $SelectedIndex
     }
 
-    if($ProjectedLeaveUpdated -eq $True)
+    if($ProjectedLeaveUpdated -eq $True -and
+       $Script:ProjectedLeave.Count -gt 0)
     {
         $SelectedLeaveDetails = $Script:ProjectedLeave[$Script:MainForm.Controls["LeavePanel"].Controls["ProjectedListBox"].SelectedIndex]
         
@@ -4655,6 +4668,6 @@ function ShowMessageBox
 
 #endregion Form Building Functions
 
-#clear #Todo uncomment this
+clear
 
 Main
