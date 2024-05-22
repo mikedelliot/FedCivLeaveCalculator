@@ -49,6 +49,7 @@ $Script:HolidaysHashTable        = @{}
 $Script:InaugurationDayHashTable = @{}
 
 $Script:UnsavedProjectedLeave = $False
+$Script:DrawingListBox        = $False
 
 #region Default Settings -- Changing values here only affects the first launch of the program. After that, it loads from a config file.
 
@@ -116,7 +117,7 @@ function Main
 {
     $Script:BeginningOfPayPeriod = GetBeginningOfPayPeriodForDate -Date $Script:CurrentDate
     $Script:LastSelectableDate   = GetLeaveYearEndForDate -Date ((Get-Date -Year ($Script:BeginningOfPayPeriod.Year + 2) -Month $Script:BeginningOfPayPeriod.Month -Day $Script:BeginningOfPayPeriod.Day)).Date
-    GetOpmHolidaysForYears
+    #GetOpmHolidaysForYears #Todo uncomment this.
     LoadConfig
     SetWorkHoursPerPayPeriod
     GetAccrualRateDateChange
@@ -835,13 +836,15 @@ function LoadConfig
                        $LoadedConfig[$Index].StartDate -le $Script:LastSelectableDate -and
                        $LoadedConfig[$Index].EndDate -is [DateTime] -and
                        $LoadedConfig[$Index].EndDate -le (GetEndingOfPayPeriodForDate -Date $LoadedConfig[$Index].StartDate) -and
-                       $LoadedConfig[$Index].EndDate -ge $LoadedConfig[$Index].StartDate)
+                       $LoadedConfig[$Index].EndDate -ge $LoadedConfig[$Index].StartDate -and
+                       $LoadedConfig[$Index].Included -is [Boolean])
                     {
                         $NewProjectedLeave = [PSCustomObject] @{
-                            LeaveBank      = [String]$LoadedConfig[$Index].LeaveBank.Trim()
-                            StartDate      = [DateTime]$LoadedConfig[$Index].StartDate.Date
-                            EndDate        = [DateTime]$LoadedConfig[$Index].EndDate.Date
+                            LeaveBank      = $LoadedConfig[$Index].LeaveBank.Trim()
+                            StartDate      = $LoadedConfig[$Index].StartDate.Date
+                            EndDate        = $LoadedConfig[$Index].EndDate.Date
                             HoursHashTable = @{}
+                            Included       = $LoadedConfig[$Index].Included
                         }
 
                         #Populate the HoursHashTable.
@@ -1084,6 +1087,8 @@ function PopulateOutputFormRichTextBox
         }
     }
 
+    #Todo Write the projected leave that is enabled here.
+
     if($Script:ProjectOrGoal -eq "Goal" -and
         $LeaveBalancesCopy[0].Balance -ge $Script:AnnualGoal -and
         $LeaveBalancesCopy[1].Balance -ge $Script:SickGoal)
@@ -1142,109 +1147,112 @@ function PopulateOutputFormRichTextBox
             {
                 for($ProjectedIndex = $ProjectedLeaveIndex; $ProjectedIndex -lt $ProjectedLeaveEndIndex; $ProjectedIndex++)
                 {
-                    if($Script:ProjectedLeave[$ProjectedIndex].HoursHashTable.ContainsKey($Date.ToString("MM/dd/yyyy")) -eq $True -and
-                       $Script:ProjectedLeave[$ProjectedIndex].HoursHashTable[$Date.ToString("MM/dd/yyyy")] -gt 0)
+                    if($Script:ProjectedLeave[$ProjectedIndex].Included -eq $True) #Only count the projeted leave if it's included (checked).
                     {
-                        $BalanceFound = $False
-                        $BalanceIndex = 0
-
-                        while($BalanceIndex -lt $LeaveBalancesCopy.Count -and
-                              $LeaveBalancesCopy[$BalanceIndex].Name -ne $Script:ProjectedLeave[$ProjectedIndex].LeaveBank)
+                        if($Script:ProjectedLeave[$ProjectedIndex].HoursHashTable.ContainsKey($Date.ToString("MM/dd/yyyy")) -eq $True -and
+                           $Script:ProjectedLeave[$ProjectedIndex].HoursHashTable[$Date.ToString("MM/dd/yyyy")] -gt 0)
                         {
-                            $BalanceIndex++
-                        }
+                            $BalanceFound = $False
+                            $BalanceIndex = 0
 
-                        if($BalanceIndex -lt $LeaveBalancesCopy.Count -and
-                           $LeaveBalancesCopy[$BalanceIndex].Name -eq $Script:ProjectedLeave[$ProjectedIndex].LeaveBank)
-                        {
-                            $BalanceFound = $True
-                        }
-
-                        if($BalanceFound -eq $True) #This is where the leave is subtracted off the balance.
-                        {
-                            $BalanceBeforeSubtraction = $LeaveBalancesCopy[$BalanceIndex].Balance
-                            
-                            $LeaveBalancesCopy[$BalanceIndex].Balance -= $Script:ProjectedLeave[$ProjectedIndex].HoursHashTable[$Date.ToString("MM/dd/yyyy")]
-
-                            while($LeaveBalancesCopy[$BalanceIndex].Balance -lt 0 -and
-                                 ($BalanceIndex + 1) -lt $LeaveBalancesCopy.Count -and
-                                  $LeaveBalancesCopy[$BalanceIndex + 1].Name -eq $LeaveBalancesCopy[$BalanceIndex].Name)
+                            while($BalanceIndex -lt $LeaveBalancesCopy.Count -and
+                                  $LeaveBalancesCopy[$BalanceIndex].Name -ne $Script:ProjectedLeave[$ProjectedIndex].LeaveBank)
                             {
-                                $LeaveBalancesCopy[$BalanceIndex + 1].Balance += $LeaveBalancesCopy[$BalanceIndex].Balance  #Take that negative balance off of the next entry with the same name.
-                                
-                                $Count = 0
+                                $BalanceIndex++
+                            }
 
-                                foreach($LeaveBalance in $LeaveBalancesCopy)
+                            if($BalanceIndex -lt $LeaveBalancesCopy.Count -and
+                               $LeaveBalancesCopy[$BalanceIndex].Name -eq $Script:ProjectedLeave[$ProjectedIndex].LeaveBank)
+                            {
+                                $BalanceFound = $True
+                            }
+
+                            if($BalanceFound -eq $True) #This is where the leave is subtracted off the balance.
+                            {
+                                $BalanceBeforeSubtraction = $LeaveBalancesCopy[$BalanceIndex].Balance
+                            
+                                $LeaveBalancesCopy[$BalanceIndex].Balance -= $Script:ProjectedLeave[$ProjectedIndex].HoursHashTable[$Date.ToString("MM/dd/yyyy")]
+
+                                while($LeaveBalancesCopy[$BalanceIndex].Balance -lt 0 -and
+                                     ($BalanceIndex + 1) -lt $LeaveBalancesCopy.Count -and
+                                      $LeaveBalancesCopy[$BalanceIndex + 1].Name -eq $LeaveBalancesCopy[$BalanceIndex].Name)
                                 {
-                                    if($LeaveBalance.Expires -eq $True -and
-                                       $LeaveBalance.ExpiresOn -eq $LeaveBalancesCopy[$BalanceIndex].ExpiresOn)
+                                    $LeaveBalancesCopy[$BalanceIndex + 1].Balance += $LeaveBalancesCopy[$BalanceIndex].Balance  #Take that negative balance off of the next entry with the same name.
+                                
+                                    $Count = 0
+
+                                    foreach($LeaveBalance in $LeaveBalancesCopy)
                                     {
-                                        $Count++
+                                        if($LeaveBalance.Expires -eq $True -and
+                                           $LeaveBalance.ExpiresOn -eq $LeaveBalancesCopy[$BalanceIndex].ExpiresOn)
+                                        {
+                                            $Count++
+                                        }
+                                    }
+
+                                    if($Count -gt 1)
+                                    {
+                                        $LeaveExpiresOnList.Remove($LeaveBalance.ExpiresOn.ToString("MM/dd/yyyy"))
+                                    }
+
+                                    $LeaveBalancesCopy.RemoveAt($BalanceIndex)
+                                }
+
+                                if($Script:DisplayHighsAndLows -eq $True)
+                                {
+                                    if($LeaveBalancesCopy[0].Balance -lt $AnnualLow)
+                                    {
+                                        $AnnualLow = $LeaveBalancesCopy[0].Balance
+                                    }
+
+                                    if($LeaveBalancesCopy[1].Balance -lt $SickLow)
+                                    {
+                                        $SickLow = $LeaveBalancesCopy[1].Balance
                                     }
                                 }
 
-                                if($Count -gt 1)
+                                if($Script:DisplayAfterEachLeave -eq $True -and
+                                  ($Script:ProjectOrGoal -eq "Project" -or
+                                   $LeaveBalancesCopy[$BalanceIndex].Name -eq "Annual" -or
+                                   $LeaveBalancesCopy[$BalanceIndex].Name -eq "Sick"))
                                 {
-                                    $LeaveExpiresOnList.Remove($LeaveBalance.ExpiresOn.ToString("MM/dd/yyyy"))
-                                }
+                                    $LeaveName = $LeaveBalancesCopy[$BalanceIndex].Name
 
-                                $LeaveBalancesCopy.RemoveAt($BalanceIndex)
-                            }
-
-                            if($Script:DisplayHighsAndLows -eq $True)
-                            {
-                                if($LeaveBalancesCopy[0].Balance -lt $AnnualLow)
-                                {
-                                    $AnnualLow = $LeaveBalancesCopy[0].Balance
-                                }
-
-                                if($LeaveBalancesCopy[1].Balance -lt $SickLow)
-                                {
-                                    $SickLow = $LeaveBalancesCopy[1].Balance
-                                }
-                            }
-
-                            if($Script:DisplayAfterEachLeave -eq $True -and
-                              ($Script:ProjectOrGoal -eq "Project" -or
-                               $LeaveBalancesCopy[$BalanceIndex].Name -eq "Annual" -or
-                               $LeaveBalancesCopy[$BalanceIndex].Name -eq "Sick"))
-                            {
-                                $LeaveName = $LeaveBalancesCopy[$BalanceIndex].Name
-
-                                if($LeaveName.ToLower().Contains("leave") -eq $False)
-                                {
-                                   $LeaveName += " Leave"
-                                }
+                                    if($LeaveName.ToLower().Contains("leave") -eq $False)
+                                    {
+                                       $LeaveName += " Leave"
+                                    }
                                 
-                                $String  = "`n`n" + $Script:ProjectedLeave[$ProjectedIndex].HoursHashTable[$Date.ToString("MM/dd/yyyy")] + " Hours of $LeaveName Taken on " + $Date.ToString("MM/dd/yyyy") + "."
-                                $String += "`n$LeaveName Balance is now: " + [Math]::Floor($LeaveBalancesCopy[$BalanceIndex].Balance)
+                                    $String  = "`n`n" + $Script:ProjectedLeave[$ProjectedIndex].HoursHashTable[$Date.ToString("MM/dd/yyyy")] + " Hours of $LeaveName Taken on " + $Date.ToString("MM/dd/yyyy") + "."
+                                    $String += "`n$LeaveName Balance is now: " + [Math]::Floor($LeaveBalancesCopy[$BalanceIndex].Balance)
 
-                                OutputFormAppendText -Text $String
-                            }
-
-                            if($LeaveBalancesCopy[$BalanceIndex].Name -eq "Annual" -or
-                               $LeaveBalancesCopy[$BalanceIndex].Name -eq "Sick" -and
-                              ($LeaveBalancesCopy[$BalanceIndex].Threshold -gt 0 -and
-                               $BalanceBeforeSubtraction -ge $LeaveBalancesCopy[$BalanceIndex].Threshold -and
-                               $LeaveBalancesCopy[$BalanceIndex].Balance -lt $LeaveBalancesCopy[$BalanceIndex].Threshold))
-                            {
-                                $String = "`n`n" + $LeaveBalancesCopy[$BalanceIndex].Name + " Leave balance is " + $LeaveBalancesCopy[$BalanceIndex].Balance + " which is below the set threshold of " + $LeaveBalancesCopy[$BalanceIndex].Threshold + " after taking leave on " + $Date.ToString("MM/dd/yyyy") + "."
-                                
-                                OutputFormAppendText -Text $String -Color "Blue"
-                            }
-
-                            if($LeaveBalancesCopy[$BalanceIndex].Balance -lt 0)
-                            {
-                                $LeaveName = $LeaveBalancesCopy[$BalanceIndex].Name
-
-                                if($LeaveName.ToLower().Contains("leave") -eq $False)
-                                {
-                                   $LeaveName += " Leave"
+                                    OutputFormAppendText -Text $String
                                 }
-                                
-                                $String = "`n`n$LeaveName balance is negative (" + $LeaveBalancesCopy[$BalanceIndex].Balance + ") after taking leave on " + $Date.ToString("MM/dd/yyyy") + "."
 
-                                OutputFormAppendText -Text $String -Color "Red"
+                                if($LeaveBalancesCopy[$BalanceIndex].Name -eq "Annual" -or
+                                   $LeaveBalancesCopy[$BalanceIndex].Name -eq "Sick" -and
+                                  ($LeaveBalancesCopy[$BalanceIndex].Threshold -gt 0 -and
+                                   $BalanceBeforeSubtraction -ge $LeaveBalancesCopy[$BalanceIndex].Threshold -and
+                                   $LeaveBalancesCopy[$BalanceIndex].Balance -lt $LeaveBalancesCopy[$BalanceIndex].Threshold))
+                                {
+                                    $String = "`n`n" + $LeaveBalancesCopy[$BalanceIndex].Name + " Leave balance is " + $LeaveBalancesCopy[$BalanceIndex].Balance + " which is below the set threshold of " + $LeaveBalancesCopy[$BalanceIndex].Threshold + " after taking leave on " + $Date.ToString("MM/dd/yyyy") + "."
+                                
+                                    OutputFormAppendText -Text $String -Color "Blue"
+                                }
+
+                                if($LeaveBalancesCopy[$BalanceIndex].Balance -lt 0)
+                                {
+                                    $LeaveName = $LeaveBalancesCopy[$BalanceIndex].Name
+
+                                    if($LeaveName.ToLower().Contains("leave") -eq $False)
+                                    {
+                                       $LeaveName += " Leave"
+                                    }
+                                
+                                    $String = "`n`n$LeaveName balance is negative (" + $LeaveBalancesCopy[$BalanceIndex].Balance + ") after taking leave on " + $Date.ToString("MM/dd/yyyy") + "."
+
+                                    OutputFormAppendText -Text $String -Color "Red"
+                                }
                             }
                         }
                     }
@@ -1520,6 +1528,7 @@ function PopulateOutputFormRichTextBox
         foreach($Leave in $Script:ProjectedLeave)
         {
             if($Leave.LeaveBank -eq "Annual" -and
+               $Leave.Included -eq $True -and
                $Leave.StartDate -gt $EndOfPayPeriod -and
                $Leave.StartDate -le $LeaveYearEnd)
             {
@@ -1640,6 +1649,8 @@ function PopulateProjectedLeaveListBox
 
     $SelectedItem = $Script:ProjectedLeave[$ProjectedLeaveListBox.SelectedIndex]
 
+    $Script:DrawingListBox = $True
+
     $ProjectedLeaveListBox.BeginUpdate()
 
     $ProjectedLeaveListBox.Items.Clear()
@@ -1656,14 +1667,14 @@ function PopulateProjectedLeaveListBox
 
         else
         {
-            $DateString = $LeaveItem.StartDate.ToString("MM/dd/yyyy") + " to " + $LeaveItem.EndDate.ToString("MM/dd/yyyy")
+            $DateString = $LeaveItem.StartDate.ToString("MM/dd/yyyy") + "  to  " + $LeaveItem.EndDate.ToString("MM/dd/yyyy")
         }
 
         foreach($Day in $LeaveItem.HoursHashTable.Keys)
         {
             $TotalHours += $LeaveItem.HoursHashTable[$Day]
         }
-        ###################
+        
         $String = $LeaveItem.LeaveBank + "`t"
 
         if([System.Windows.Forms.TextRenderer]::MeasureText($LeaveItem.LeaveBank, $Script:FormFont).Width -le 60) #Line up the date after the name if it's long.
@@ -1691,10 +1702,13 @@ function PopulateProjectedLeaveListBox
         }
 
         $ProjectedLeaveListBox.Items.Add($String) | Out-Null
-        ###################
+        
+        $ProjectedLeaveListBox.SetItemChecked($ProjectedLeaveListBox.Items.Count - 1, $LeaveItem.Included)
     }
 
     $ProjectedLeaveListBox.EndUpdate()
+
+    $Script:DrawingListBox = $False
 
     $ProjectedLeaveListbox.SelectedIndex = $Script:ProjectedLeave.IndexOf($SelectedItem)
 }
@@ -1897,7 +1911,7 @@ function UpdateLengthOfServiceStrings
             $MonthDifference += 12
         }
 
-        $Script:TimeUntilMilestone = "Accrue Rate for " + $AccrualString + " in: " + $YearDifference + " " + (NumberGetsLetters -String "Year" -Number $YearDifference) + ", " + $MonthDifference + " " + (NumberGetsLetters -String "Month" -Number $MonthDifference) + ", " + $DayDifference + " " + (NumberGetsLetters -String "Day" -Number $DayDifference)
+        $Script:TimeUntilMilestone = "Accrue Rate Changes in: " + $YearDifference + " " + (NumberGetsLetters -String "Year" -Number $YearDifference) + ", " + $MonthDifference + " " + (NumberGetsLetters -String "Month" -Number $MonthDifference) + ", " + $DayDifference + " " + (NumberGetsLetters -String "Day" -Number $DayDifference)
     }
 
     else
@@ -2314,6 +2328,32 @@ function MainFormBalanceDeleteButtonClick
     }
 }
 
+function MainFormProjectedLeaveListBoxClick
+{
+    [CmdletBinding()]
+    param
+    (
+        [parameter(Mandatory=$True)][System.EventArgs] $EventArguments
+    )
+
+    $ClickedIndex   = $Script:MainForm.Controls["LeavePanel"].Controls["ProjectedListBox"].IndexFromPoint($EventArguments.Location)
+    $CheckedListBox = $Script:MainForm.Controls["LeavePanel"].Controls["ProjectedListBox"]
+    
+    if($ClickedIndex -ne -1 -and
+       $EventArguments.Button -eq "Left" -and
+       $EventArguments.X -gt 13) #13 is the far right edge of the checkbox. So any clicks greater than that are not checkbox clicks.
+    {
+        $CheckedListBox.SetItemChecked($ClickedIndex, -not $CheckedListBox.GetItemChecked($ClickedIndex))
+    }
+
+    if($ClickedIndex -eq -1)
+    {
+        $SelectedIndex = $Script:MainForm.Controls["LeavePanel"].Controls["ProjectedListBox"].SelectedIndex
+        
+        $CheckedListBox.SetItemChecked($SelectedIndex, -not $CheckedListBox.GetItemChecked($SelectedIndex))
+    }
+}
+
 function MainFormProjectedLeaveListBoxDoubleClick
 {
     [CmdletBinding()]
@@ -2323,10 +2363,40 @@ function MainFormProjectedLeaveListBoxDoubleClick
     )
     
     $DoubleClickedIndex = $Script:MainForm.Controls["LeavePanel"].Controls["ProjectedListBox"].IndexFromPoint($EventArguments.Location)
+    $CheckedListBox     = $Script:MainForm.Controls["LeavePanel"].Controls["ProjectedListBox"]
 
-    if($DoubleClickedIndex -ne -1)
+    if($DoubleClickedIndex -ne -1 -and
+       $EventArguments.X -gt 13) #13 is the far right edge of the checkbox. So any clicks greater than that are not checkbox clicks.)
     {
+        $CheckedListBox.SetItemChecked($DoubleClickedIndex, -not $CheckedListBox.GetItemChecked($DoubleClickedIndex))
+        
         MainFormProjectedEditButtonClick
+    }
+
+    if($DoubleClickedIndex -eq -1)
+    {
+        $SelectedIndex = $Script:MainForm.Controls["LeavePanel"].Controls["ProjectedListBox"].SelectedIndex
+        
+        $CheckedListBox.SetItemChecked($SelectedIndex, -not $CheckedListBox.GetItemChecked($SelectedIndex))
+    }
+}
+
+function MainFormProjectedLeaveListBoxItemCheck
+{
+    [CmdletBinding()]
+    param
+    (
+        [parameter(Mandatory=$True)][System.EventArgs] $EventArguments
+    )
+
+    if($Script:DrawingListBox -eq $False)
+    {
+        $SelectedIndex  = $Script:MainForm.Controls["LeavePanel"].Controls["ProjectedListBox"].SelectedIndex
+        $CheckedListBox = $Script:MainForm.Controls["LeavePanel"].Controls["ProjectedListBox"]
+    
+        $SelectedLeaveDetails = $Script:ProjectedLeave[$SelectedIndex]
+
+        $SelectedLeaveDetails.Included = -not $CheckedListBox.GetItemChecked($SelectedIndex) #This event fires before the check change actually happens, so we need the opposite value.
     }
 }
 
@@ -2341,6 +2411,7 @@ function MainFormProjectedAddButtonClick
         HoursHashTable = @{
         $Script:CurrentDate.ToString("MM/dd/yyyy") = GetHoursForWorkDay -Day $Script:CurrentDate
         }
+        Included       = $True
     }
 
     $Script:ProjectedLeave.Add($NewProjectedLeave)
@@ -3512,7 +3583,7 @@ function BuildMainForm
     $MainForm.Font            = $Script:FormFont
     $MainForm.FormBorderStyle = "FixedSingle"
     $MainForm.MaximizeBox     = $False
-    $MainForm.Size            = New-Object System.Drawing.Size(950, 550)
+    $MainForm.Size            = New-Object System.Drawing.Size(957, 550)
     $MainForm.Text            = "Federal Civilian Leave Calculator"
     $MainForm.WindowState     = "Normal"
     
@@ -3520,7 +3591,7 @@ function BuildMainForm
     $SettingsPanel.Name = "SettingsPanel"
     $SettingsPanel.BackColor = "LightGray"
     $SettingsPanel.Dock = "Top"
-    $SettingsPanel.Height = 70
+    $SettingsPanel.Height = 71
     $SettingsPanel.TabIndex = 1
 
     $SCDLeaveDateLabel = New-Object System.Windows.Forms.Label
@@ -3528,57 +3599,57 @@ function BuildMainForm
     $SCDLeaveDateLabel.AutoSize = $True
     $SCDLeaveDateLabel.Left = 20
     $SCDLeaveDateLabel.Text = "SCD Leave Date:"
-    $SCDLeaveDateLabel.Top = 8
+    $SCDLeaveDateLabel.Top = 11
 
     $SCDLeaveDateDateTimePicker = New-Object System.Windows.Forms.DateTimePicker
     $SCDLeaveDateDateTimePicker.Name = "SCDLeaveDateDateTimePicker"
     $SCDLeaveDateDateTimePicker.Format = "Short"
-    $SCDLeaveDateDateTimePicker.Left = 119
+    $SCDLeaveDateDateTimePicker.Left = 125
     $SCDLeaveDateDateTimePicker.MaxDate = $Script:CurrentDate
     $SCDLeaveDateDateTimePicker.Top = 8
-    $SCDLeaveDateDateTimePicker.Width = 115
+    $SCDLeaveDateDateTimePicker.Width = 200
 
     $UpdateInfoButton = New-Object System.Windows.Forms.Button
     $UpdateInfoButton.Name = "UpdateInfoButton"
-    $UpdateInfoButton.AutoSize = $True
-    $UpdateInfoButton.Left = 288
+    $UpdateInfoButton.Left = 345
     $UpdateInfoButton.Text = "Update Employee Info"
     $UpdateInfoButton.Top = 8
+    $UpdateInfoButton.Width = 300
     
     $LengthOfServiceTextBox = New-Object System.Windows.Forms.TextBox
     $LengthOfServiceTextBox.Name = "LengthOfServiceTextBox"
-    $LengthOfServiceTextBox.AutoSize = $True
     $LengthOfServiceTextBox.Left = 20
     $LengthOfServiceTextBox.ReadOnly = $True
     $LengthOfServiceTextBox.TabStop = $False
     $LengthOfServiceTextBox.Top = 38
+    $LengthOfServiceTextBox.Width = 305
     
     $EmployeeTypeTextBox = New-Object System.Windows.Forms.TextBox
     $EmployeeTypeTextBox.Name = "EmployeeTypeTextBox"
-    $EmployeeTypeTextBox.AutoSize = $True
-    $EmployeeTypeTextBox.Left = 288
+    $EmployeeTypeTextBox.Left = 345
     $EmployeeTypeTextBox.ReadOnly = $True
     $EmployeeTypeTextBox.TabStop = $False
     $EmployeeTypeTextBox.Top = 38
+    $EmployeeTypeTextBox.Width = 300
 
     $DisplayBalanceEveryLeaveCheckBox = New-Object System.Windows.Forms.CheckBox
     $DisplayBalanceEveryLeaveCheckBox.Name = "DisplayBalanceEveryLeaveCheckBox"
     $DisplayBalanceEveryLeaveCheckBox.AutoSize = $True
-    $DisplayBalanceEveryLeaveCheckBox.Left = 450
+    $DisplayBalanceEveryLeaveCheckBox.Left = 665
     $DisplayBalanceEveryLeaveCheckBox.Text = "Display Balance After Each Day of Leave"
-    $DisplayBalanceEveryLeaveCheckBox.Top = 4
+    $DisplayBalanceEveryLeaveCheckBox.Top = 2
 
     $DisplayBalanceEveryPayPeriodEnd = New-Object System.Windows.Forms.CheckBox
     $DisplayBalanceEveryPayPeriodEnd.Name = "DisplayBalanceEveryPayPeriodEnd"
     $DisplayBalanceEveryPayPeriodEnd.AutoSize = $True
-    $DisplayBalanceEveryPayPeriodEnd.Left = 450
+    $DisplayBalanceEveryPayPeriodEnd.Left = 665
     $DisplayBalanceEveryPayPeriodEnd.Text = "Display Balance After Each Pay Period Ends"
-    $DisplayBalanceEveryPayPeriodEnd.Top = 26
+    $DisplayBalanceEveryPayPeriodEnd.Top = 25
 
     $DisplayLeaveHighsAndLows = New-Object System.Windows.Forms.CheckBox
     $DisplayLeaveHighsAndLows.Name = "DisplayLeaveHighsAndLows"
     $DisplayLeaveHighsAndLows.AutoSize = $True
-    $DisplayLeaveHighsAndLows.Left = 450
+    $DisplayLeaveHighsAndLows.Left = 665
     $DisplayLeaveHighsAndLows.Text = "Display Annual/Sick Leave Highs/Lows"
     $DisplayLeaveHighsAndLows.Top = 48
 
@@ -3593,50 +3664,38 @@ function BuildMainForm
     $ProjectBalanceRadioButton.Name = "ProjectBalanceRadioButton"
     $ProjectBalanceRadioButton.AutoSize = $True
     $ProjectBalanceRadioButton.Left = 10
+    $ProjectBalanceRadioButton.Text = "Project to Date:"
     $ProjectBalanceRadioButton.Top = 10
     
     $ReachGoalRadioButton = New-Object System.Windows.Forms.RadioButton
     $ReachGoalRadioButton.Name = "ReachGoalRadioButton"
     $ReachGoalRadioButton.AutoSize = $True
     $ReachGoalRadioButton.Left = 10
+    $ReachGoalRadioButton.Text = "Reach Goal:"
     $ReachGoalRadioButton.Top = 40
     
-    $ProjectToLabel = New-Object System.Windows.Forms.Label
-    $ProjectToLabel.Name = "ProjectToLabel"
-    $ProjectToLabel.AutoSize = $True
-    $ProjectToLabel.Left = 42
-    $ProjectToLabel.Text = "Project to Date:"
-    $ProjectToLabel.Top = 10
-
     $ProjectToDateDateTimePicker = New-Object System.Windows.Forms.DateTimePicker
     $ProjectToDateDateTimePicker.Name = "ProjectToDateDateTimePicker"
     $ProjectToDateDateTimePicker.Format = "Short"
-    $ProjectToDateDateTimePicker.Left = 130
+    $ProjectToDateDateTimePicker.Left = 120
     $ProjectToDateDateTimePicker.MinDate = $Script:BeginningOfPayPeriod
     $ProjectToDateDateTimePicker.MaxDate = $Script:LastSelectableDate
-    $ProjectToDateDateTimePicker.Top = 6
-    $ProjectToDateDateTimePicker.Width = 115
-
-    $ReachGoalLabel = New-Object System.Windows.Forms.Label
-    $ReachGoalLabel.Name = "ReachGoalLabel"
-    $ReachGoalLabel.AutoSize = $True
-    $ReachGoalLabel.Left = 42
-    $ReachGoalLabel.Text = "Reach Goal"
-    $ReachGoalLabel.Top = 42
+    $ProjectToDateDateTimePicker.Top = 8
+    $ProjectToDateDateTimePicker.Width = 281
 
     $AnnualGoalLabel = New-Object System.Windows.Forms.Label
     $AnnualGoalLabel.Name = "AnnualGoalLabel"
     $AnnualGoalLabel.AutoSize = $True
-    $AnnualGoalLabel.Left = 129
+    $AnnualGoalLabel.Left = 120
     $AnnualGoalLabel.Text = "Annual Leave:"
     $AnnualGoalLabel.Top = 42
-
+    
     $AnnualGoalNumericUpDown = New-Object System.Windows.Forms.NumericUpDown
     $AnnualGoalNumericUpDown.Name = "AnnualGoalNumericUpDown"
-    $AnnualGoalNumericUpDown.AutoSize = $True
     $AnnualGoalNumericUpDown.Left = 207
     $AnnualGoalNumericUpDown.Maximum = $Script:MaximumAnnual
     $AnnualGoalNumericUpDown.Top = 40
+    $AnnualGoalNumericUpDown.Width = 50
 
     $SickGoalLabel = New-Object System.Windows.Forms.Label
     $SickGoalLabel.Name = "SickGoalLabel"
@@ -3647,17 +3706,17 @@ function BuildMainForm
 
     $SickGoalNumericUpDown = New-Object System.Windows.Forms.NumericUpDown
     $SickGoalNumericUpDown.Name = "SickGoalNumericUpDown"
-    $SickGoalNumericUpDown.AutoSize = $True
-    $SickGoalNumericUpDown.Left = 345
+    $SickGoalNumericUpDown.Left = 351
     $SickGoalNumericUpDown.Maximum = $Script:MaximumSick
     $SickGoalNumericUpDown.Top = 40
+    $SickGoalNumericUpDown.Width = 50
 
     $ProjectButton = New-Object System.Windows.Forms.Button
     $ProjectButton.Name = "ProjectButton"
-    $ProjectButton.AutoSize = $True
-    $ProjectButton.Left = 501
+    $ProjectButton.Left = 450
     $ProjectButton.Text = "Run Projection"
-    $ProjectButton.Top = 24
+    $ProjectButton.Top = 22
+    $ProjectButton.Width = 442
     
     $LeavePanel = New-Object System.Windows.Forms.Panel
     $LeavePanel.Name = "LeavePanel"
@@ -3739,18 +3798,19 @@ function BuildMainForm
     $BalanceListBox.Height = 277
     $BalanceListBox.Left = 75
     $BalanceListBox.Top = 30
-    $BalanceListBox.Width = 300
+    $BalanceListBox.Width = 375
 
-    $ProjectedListBox = New-Object System.Windows.Forms.ListBox
+    $ProjectedListBox = New-Object System.Windows.Forms.CheckedListBox
     $ProjectedListBox.Name = "ProjectedListBox"
+    $ProjectedListBox.CheckOnClick = $True
     $ProjectedListBox.Height = 277
     $ProjectedListBox.Left = 490
     $ProjectedListBox.Top = 30
-    $ProjectedListBox.Width = 370
+    $ProjectedListBox.Width = 375
 
     $MainForm.Controls.AddRange(($LeavePanel, $SettingsPanel, $ReportPanel))
     $SettingsPanel.Controls.AddRange(($SCDLeaveDateLabel, $SCDLeaveDateDateTimePicker, $UpdateInfoButton, $LengthOfServiceTextBox, $EmployeeTypeTextBox, $DisplayBalanceEveryLeaveCheckBox, $DisplayBalanceEveryPayPeriodEnd, $DisplayLeaveHighsAndLows))
-    $ReportPanel.Controls.AddRange(($ProjectBalanceRadioButton, $ReachGoalRadioButton, $ProjectToLabel, $ProjectToDateDateTimePicker, $ReachGoalLabel, $AnnualGoalLabel, $AnnualGoalNumericUpDown, $SickGoalLabel, $SickGoalNumericUpDown, $ProjectButton))
+    $ReportPanel.Controls.AddRange(($ProjectBalanceRadioButton, $ReachGoalRadioButton, $ProjectToDateDateTimePicker, $AnnualGoalLabel, $AnnualGoalNumericUpDown, $SickGoalLabel, $SickGoalNumericUpDown, $ProjectButton))
     $LeavePanel.Controls.AddRange(($LeaveBalancesLabel, $ProjectedLeaveLabel, $BalanceListBox, $BalanceAddButton, $BalanceEditButton, $BalanceDeleteButton, $ProjectedListBox, $ProjectedAddButton, $ProjectedEditButton, $ProjectedDeleteButton))
     
     #Select/Check the appropriate things.
@@ -3837,7 +3897,9 @@ function BuildMainForm
     $SCDLeaveDateDateTimePicker.Add_ValueChanged({MainFormSCDLeaveDateTimePickerValueChanged})
     $BalanceListBox.Add_SelectedIndexChanged({MainFormLeaveBalanceListBoxIndexChanged})
     $BalanceListBox.Add_DoubleClick({MainFormLeaveBalanceListBoxDoubleClick -EventArguments $_})
+    $ProjectedListBox.Add_Click({MainFormProjectedLeaveListBoxClick -EventArguments $_})
     $ProjectedListBox.Add_DoubleClick({MainFormProjectedLeaveListBoxDoubleClick -EventArguments $_})
+    $ProjectedListBox.Add_ItemCheck({MainFormProjectedLeaveListBoxItemCheck -EventArguments $_})
     $ProjectToDateDateTimePicker.Add_ValueChanged({MainFormProjectToDateValueChanged})
     $AnnualGoalNumericUpDown.Add_ValueChanged({MainFormAnnualGoalValueChanged})
     $SickGoalNumericUpDown.Add_ValueChanged({MainFormSickGoalValueChanged})
@@ -4303,7 +4365,7 @@ function BuildEditLeaveBalanceForm
     $LeaveExpiresOnDateTimePicker.MinDate = $Script:BeginningOfPayPeriod
     $LeaveExpiresOnDateTimePicker.Top = 83
     $LeaveExpiresOnDateTimePicker.Visible = $False
-    $LeaveExpiresOnDateTimePicker.Width = 115
+    $LeaveExpiresOnDateTimePicker.Width = 95
 
     $WarningLabel = New-Object System.Windows.Forms.Label
     $WarningLabel.Name = "WarningLabel"
@@ -4426,14 +4488,14 @@ function BuildEditProjectedLeaveForm
     $LeaveStartDateTimePicker.Format = "Short"
     $LeaveStartDateTimePicker.Left = 90
     $LeaveStartDateTimePicker.Top = 38
-    $LeaveStartDateTimePicker.Width = 115
+    $LeaveStartDateTimePicker.Width = 95
 
     $LeaveEndDateTimePicker = New-Object System.Windows.Forms.DateTimePicker
     $LeaveEndDateTimePicker.Name = "LeaveEndDateTimePicker"
     $LeaveEndDateTimePicker.Format = "Short"
     $LeaveEndDateTimePicker.Left = 90
     $LeaveEndDateTimePicker.Top = 76
-    $LeaveEndDateTimePicker.Width = 115
+    $LeaveEndDateTimePicker.Width = 95
 
     $LeaveBankLabel = New-Object System.Windows.Forms.Label
     $LeaveBankLabel.Name = "LeaveBankLabel"
