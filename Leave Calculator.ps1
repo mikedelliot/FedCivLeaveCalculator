@@ -7,12 +7,6 @@ Federal Holidays: https://www.opm.gov/policy-data-oversight/pay-leave/federal-ho
 
 <#
 See about handling "Enter" key press events on all forms.
-
-Make it say "Leave Balances as of Date" instead of just Leave Balances. Move this to the center and just make the one over the box say Leave Balances.
-
-Add AutoSize to everything that should have it. Make things FlowLayoutPanels if it makes more sense (like employee type). Place all controls correctly.
-
-Double check that anything that can have a scrollbar when it gets one doesn't screw up the layout.
 #>
 
 Add-Type -AssemblyName System.Windows.Forms
@@ -21,9 +15,8 @@ Add-Type -AssemblyName System.Drawing
 #Enable nicer looking visual styles, especially on the DateTimePickers.
 [System.Windows.Forms.Application]::EnableVisualStyles()
 
-$Script:FormFont      = New-Object System.Drawing.Font("Times New Roman", 10)
-#$Script:MonoSpaceFont = New-Object System.Drawing.Font("Courier New", 10) #Todo either remove this or put it back into the list boxes.
-$Script:IconsFont     = New-Object System.Drawing.Font("Segoe MDL2 Assets", 10, [System.Drawing.FontStyle]::Bold)
+$Script:FormFont     = New-Object System.Drawing.Font("Times New Roman", 10)
+$Script:IconsFont    = New-Object System.Drawing.Font("Segoe MDL2 Assets", 10, [System.Drawing.FontStyle]::Bold)
 
 $Script:CurrentDate                = (Get-Date).Date
 $Script:LeaveYearBeginningBaseline = (Get-Date -Year 2023 -Month 1 -Day 1).Date #In 2023 the first pay period began on 1 Jan. Use this as a baseline.
@@ -117,7 +110,7 @@ function Main
 {
     $Script:BeginningOfPayPeriod = GetBeginningOfPayPeriodForDate -Date $Script:CurrentDate
     $Script:LastSelectableDate   = GetLeaveYearEndForDate -Date ((Get-Date -Year ($Script:BeginningOfPayPeriod.Year + 2) -Month $Script:BeginningOfPayPeriod.Month -Day $Script:BeginningOfPayPeriod.Day)).Date
-    #GetOpmHolidaysForYears #Todo uncomment this.
+    GetOpmHolidaysForYears
     LoadConfig
     SetWorkHoursPerPayPeriod
     GetAccrualRateDateChange
@@ -730,8 +723,7 @@ function LoadConfig
                             #Digits                                          0-9
                             #Also a space                                       <space>
                         
-                        if($LoadedConfig[$Index].Name.Trim().Length -gt 0 -and
-                           $LoadedConfig[$Index].Name.Trim().Length -le 14 -and
+                        if([System.Windows.Forms.TextRenderer]::MeasureText($LoadedConfig[$Index].Name.Trim(), $Script:FormFont).Width -le 100 -and
                            $LoadedConfig[$Index].Name.Trim() -match "[^A-Za-z0-9 ]" -eq $False -and
                            $LoadedConfig[$Index].Name.ToLower().Trim() -ne "annual" -and
                            $LoadedConfig[$Index].Name.ToLower().Trim() -ne "sick" -and
@@ -975,7 +967,7 @@ function PopulateLeaveBalanceListBox
     {
         $String = $LeaveItem.Name + "`t"
 
-        if([System.Windows.Forms.TextRenderer]::MeasureText($LeaveItem.Name, $Script:FormFont).Width -le 60) #In order to line up the balance. #Todo adjusting this.
+        if([System.Windows.Forms.TextRenderer]::MeasureText($LeaveItem.Name, $Script:FormFont).Width -le 60) #In order to line up the balance.
         {
             $String += "`t"
         }
@@ -1068,15 +1060,22 @@ function PopulateOutputFormRichTextBox
     OutputFormAppendText -Text "`nStarting Balances:`n" -FontStyle "Bold"
 
     #Add Annual/Sick
-    OutputFormAppendText -Text ($LeaveBalancesCopy[0].Name + ":`t" + $LeaveBalancesCopy[0].Balance)
-    OutputFormAppendText -Text ("`n" + $LeaveBalancesCopy[1].Name + ":`t" + $LeaveBalancesCopy[1].Balance)
+    OutputFormAppendText -Text ($LeaveBalancesCopy[0].Name + ":`t`t" + $LeaveBalancesCopy[0].Balance)
+    OutputFormAppendText -Text ("`n" + $LeaveBalancesCopy[1].Name + ":`t`t" + $LeaveBalancesCopy[1].Balance)
 
     #If projecting to date, append the rest of the balances and their expiration if they expire.
     if($Script:ProjectOrGoal -eq "Project")
     {
         for($Index = 2; $Index -lt $LeaveBalancesCopy.Count; $Index++)
         {
-            $String = "`n" + $LeaveBalancesCopy[$Index].Name + ":`t" + $LeaveBalancesCopy[$Index].Balance
+            $String = "`n" + $LeaveBalancesCopy[$Index].Name + ":`t"
+
+            if([System.Windows.Forms.TextRenderer]::MeasureText($LeaveBalancesCopy[$Index].Name, $Script:FormFont).Width -le 60) #In order to line up the balances.
+            {
+                $String += "`t"
+            }
+
+            $String += $LeaveBalancesCopy[$Index].Balance
 
             if($LeaveBalancesCopy[$Index].Expires -eq $True)
             {
@@ -1087,7 +1086,23 @@ function PopulateOutputFormRichTextBox
         }
     }
 
-    #Todo Write the projected leave that is enabled here.
+    #Add in projected leave included in the report.
+    if($Script:MainForm.Controls["LeavePanel"].Controls["ProjectedListBox"].CheckedItems.Count -gt 0)
+    {
+        OutputFormAppendText -Text "`n`nProjected Leave Included in Report:"
+
+        foreach($LeaveItem in $Script:MainForm.Controls["LeavePanel"].Controls["ProjectedListBox"].CheckedItems)
+        {
+            $LeaveBankName = $Script:ProjectedLeave[$Script:MainForm.Controls["LeavePanel"].Controls["ProjectedListBox"].Items.IndexOf($LeaveItem)].LeaveBank.ToLower().Trim()
+            
+            if($LeaveBankName -eq "annual" -or
+               $LeaveBankName -eq "sick" -or
+               $Script:ProjectOrGoal -eq "Project")
+            {
+                OutputFormAppendText -Text ("`n" + $LeaveItem)
+            }
+        }
+    }
 
     if($Script:ProjectOrGoal -eq "Goal" -and
         $LeaveBalancesCopy[0].Balance -ge $Script:AnnualGoal -and
@@ -1332,14 +1347,22 @@ function PopulateOutputFormRichTextBox
             }
         }
 
+        if($Script:ProjectOrGoal -eq "Goal" -and
+           $LeaveBalancesCopy[0].Balance -ge $Script:AnnualGoal -and
+           $LeaveBalancesCopy[1].Balance -ge $Script:SickGoal)
+        {
+            $GoalsMet = $True
+        }
+
         if($Script:DisplayAfterEachPP -eq $True -and
-           $EndOfPayPeriod -lt $EndDate)
+           $EndOfPayPeriod -lt $EndDate -and
+           $GoalsMet -eq $False)
         {
             #Add descriptive date
             OutputFormAppendText -Text ("`n`nBalances as of Pay Period Ending " + $EndOfPayPeriod.ToString("MM/dd/yyyy") + ":`n")
             
             #Add Annual with color
-            $AnnualString = $LeaveBalancesCopy[0].Name + ":`t" + [Math]::Floor($LeaveBalancesCopy[0].Balance)
+            $AnnualString = $LeaveBalancesCopy[0].Name + ":`t`t" + [Math]::Floor($LeaveBalancesCopy[0].Balance)
 
             if($LeaveBalancesCopy[0].Balance -lt 0)
             {
@@ -1359,7 +1382,7 @@ function PopulateOutputFormRichTextBox
             }
 
             #Add Sick with color
-            $SickString = "`n" + $LeaveBalancesCopy[1].Name + ":`t" + [Math]::Floor($LeaveBalancesCopy[1].Balance)
+            $SickString = "`n" + $LeaveBalancesCopy[1].Name + ":`t`t" + [Math]::Floor($LeaveBalancesCopy[1].Balance)
 
             if($LeaveBalancesCopy[1].Balance -lt 0)
             {
@@ -1380,7 +1403,14 @@ function PopulateOutputFormRichTextBox
                       ($LeaveBalancesCopy[$Index].Expires -eq $True -and
                        $LeaveBalancesCopy[$Index].ExpiresOn -ge $EndOfPayPeriod))
                     {
-                        $String = "`n" + $LeaveBalancesCopy[$Index].Name + ":`t" + $LeaveBalancesCopy[$Index].Balance
+                        $String = "`n" + $LeaveBalancesCopy[$Index].Name + ":`t"
+
+                        if([System.Windows.Forms.TextRenderer]::MeasureText($LeaveBalancesCopy[$Index].Name, $Script:FormFont).Width -le 60) #In order to line up the balances.
+                        {
+                            $String += "`t"
+                        }
+
+                        $String += $LeaveBalancesCopy[$Index].Balance
 
                         if($LeaveBalancesCopy[$Index].Expires -eq $True)
                         {
@@ -1399,13 +1429,6 @@ function PopulateOutputFormRichTextBox
                     }
                 }
             }
-        }
-
-        if($Script:ProjectOrGoal -eq "Goal" -and
-           $LeaveBalancesCopy[0].Balance -ge $Script:AnnualGoal -and
-           $LeaveBalancesCopy[1].Balance -ge $Script:SickGoal)
-        {
-            $GoalsMet = $True
         }
 
         $EndOfPayPeriod = $EndOfPayPeriod.AddDays(14)
@@ -1427,7 +1450,7 @@ function PopulateOutputFormRichTextBox
 
     if($Script:DisplayHighsAndLows -eq $True)
     {
-        $String = "`n`nAnnual Leave High:`t" + [Math]::Floor($AnnualHigh) + "`nSick Leave High:`t" + [Math]::Floor($SickHigh) + "`nAnnual Leave Low:`t" + [Math]::Floor($AnnualLow) + "`nSick Leave Low:`t" + [Math]::Floor($SickLow)
+        $String = "`n`nAnnual Leave High:`t" + [Math]::Floor($AnnualHigh) + "`nSick Leave High:`t`t" + [Math]::Floor($SickHigh) + "`nAnnual Leave Low:`t" + [Math]::Floor($AnnualLow) + "`nSick Leave Low:`t`t" + [Math]::Floor($SickLow)
         
         OutputFormAppendText -Text $String
     }
@@ -1459,7 +1482,7 @@ function PopulateOutputFormRichTextBox
     OutputFormAppendText -Text ("`nEnding Balances After Pay Period Ending " + $EndOfPayPeriod.ToString("MM/dd/yyyy") + ":`n") -Alignment "Center" -FontSize ($Script:OutputForm.Controls["OutputRichTextBox"].Font.Size + 2) -FontStyle "Bold"
 
     #Add Annual with color
-    $AnnualString = $LeaveBalancesCopy[0].Name + ":`t" + $LeaveBalancesCopy[0].Balance
+    $AnnualString = $LeaveBalancesCopy[0].Name + ":`t`t" + $LeaveBalancesCopy[0].Balance
 
     if($LeaveBalancesCopy[0].Balance -lt 0)
     {
@@ -1479,7 +1502,7 @@ function PopulateOutputFormRichTextBox
     }
 
     #Add Sick with color
-    $SickString = "`n" + $LeaveBalancesCopy[1].Name + ":`t" + $LeaveBalancesCopy[1].Balance
+    $SickString = "`n" + $LeaveBalancesCopy[1].Name + ":`t`t" + $LeaveBalancesCopy[1].Balance
 
     if($LeaveBalancesCopy[1].Balance -lt 0)
     {
@@ -1500,7 +1523,14 @@ function PopulateOutputFormRichTextBox
               ($LeaveBalancesCopy[$Index].Expires -eq $True -and
                $LeaveBalancesCopy[$Index].ExpiresOn -ge $EndOfPayPeriod))
             {
-                $String = "`n" + $LeaveBalancesCopy[$Index].Name + ":`t" + $LeaveBalancesCopy[$Index].Balance
+                $String = "`n" + $LeaveBalancesCopy[$Index].Name + ":`t"
+
+                if([System.Windows.Forms.TextRenderer]::MeasureText($LeaveBalancesCopy[$Index].Name, $Script:FormFont).Width -le 60) #In order to line up the balances.
+                {
+                    $String += "`t"
+                }
+
+                $String += $LeaveBalancesCopy[$Index].Balance
 
                 if($LeaveBalancesCopy[$Index].Expires -eq $True)
                 {
@@ -1591,8 +1621,8 @@ function PopulateProjectedLeaveDays
         
         $NewPanel = New-Object System.Windows.Forms.Panel
         $NewPanel.Name = "DatePanel"
-        $NewPanel.Height = 20
-        $NewPanel.Width = 390
+        $NewPanel.Height = 22
+        $NewPanel.Width = 415
 
         $NewNumericUpDown = New-Object System.Windows.Forms.NumericUpDown
         $NewNumericUpDown.Name = "HoursNumericUpDown"
@@ -1602,14 +1632,16 @@ function PopulateProjectedLeaveDays
         $NewNumericUpDown.Width = 40
 
         $DayOfWeekLabel = New-Object System.Windows.Forms.Label
+        $DayOfWeekLabel.AutoSize = $True
         $DayOfWeekLabel.Left = 45
         $DayOfWeekLabel.Text = $Date.DayOfWeek.ToString()
-        $DayOfWeekLabel.Width = 70
+        $DayOfWeekLabel.Top = 3
 
         $DateLabel = New-Object System.Windows.Forms.Label
         $DateLabel.AutoSize = $True
-        $DateLabel.Left = 113
+        $DateLabel.Left = 115
         $DateLabel.Text = $DateString
+        $DateLabel.Top = 3
         
         if($SelectedLeaveDetails.HoursHashTable.ContainsKey($DateString) -eq $True)
         {
@@ -1623,13 +1655,13 @@ function PopulateProjectedLeaveDays
 
         if($Script:HolidaysHashTable.ContainsKey($DateString) -eq $True)
         {
-            $DateLabel.Text = $DateString + "   -   " + $Script:HolidaysHashTable[$DateString]
+            $DateLabel.Text = $DateString + "  -  " + $Script:HolidaysHashTable[$DateString]
         }
 
         elseif($InaugurationHoliday -eq $True -and
                $Script:InaugurationDayHashTable.ContainsKey($DateString) -eq $True)
         {
-            $DateLabel.Text = $DateString + "   -   " + $Script:InaugurationDayHashTable[$DateString]
+            $DateLabel.Text = $DateString + "  -  " + $Script:InaugurationDayHashTable[$DateString]
         }
 
         $NewPanel.Controls.AddRange(($NewNumericUpDown, $DayOfWeekLabel, $DateLabel))
@@ -1655,7 +1687,7 @@ function PopulateProjectedLeaveListBox
 
     $ProjectedLeaveListBox.Items.Clear()
     
-    foreach($LeaveItem in $Script:ProjectedLeave) #Todo might adjust the `t tabbing in here for spacing.
+    foreach($LeaveItem in $Script:ProjectedLeave)
     {
         $DateString = ""
         $TotalHours = 0
@@ -2461,6 +2493,8 @@ function MainFormProjectedDeleteButtonClick
 function MainFormProjectToDateValueChanged
 {
     $Script:ProjectToDate = $Script:MainForm.Controls["ReportPanel"].Controls["ProjectToDateDateTimePicker"].Value.Date
+
+    $Script:MainForm.Controls["ReportPanel"].Controls["ProjectToEndOfPayPeriodlabel"].Text = "Will Project Through Pay Period Ending: " + (GetEndingOfPayPeriodForDate -Date $Script:ProjectToDate).ToString("MM/dd/yyyy")
 }
 
 function MainFormAnnualGoalValueChanged
@@ -3583,7 +3617,7 @@ function BuildMainForm
     $MainForm.Font            = $Script:FormFont
     $MainForm.FormBorderStyle = "FixedSingle"
     $MainForm.MaximizeBox     = $False
-    $MainForm.Size            = New-Object System.Drawing.Size(957, 550)
+    $MainForm.Size            = New-Object System.Drawing.Size(957, 555)
     $MainForm.Text            = "Federal Civilian Leave Calculator"
     $MainForm.WindowState     = "Normal"
     
@@ -3711,67 +3745,83 @@ function BuildMainForm
     $SickGoalNumericUpDown.Top = 40
     $SickGoalNumericUpDown.Width = 50
 
+    $ProjectToEndOfPayPeriodLabel = New-Object System.Windows.Forms.Label
+    $ProjectToEndOfPayPeriodLabel.Name = "ProjectToEndOfPayPeriodLabel"
+    $ProjectToEndOfPayPeriodLabel.AutoSize = $True
+    $ProjectToEndOfPayPeriodLabel.Left = 521
+    $ProjectToEndOfPayPeriodLabel.Top = 10
+
     $ProjectButton = New-Object System.Windows.Forms.Button
     $ProjectButton.Name = "ProjectButton"
     $ProjectButton.Left = 450
     $ProjectButton.Text = "Run Projection"
-    $ProjectButton.Top = 22
+    $ProjectButton.Top = 40
     $ProjectButton.Width = 442
     
     $LeavePanel = New-Object System.Windows.Forms.Panel
     $LeavePanel.Name = "LeavePanel"
     $LeavePanel.Dock = "Fill"
     $LeavePanel.TabIndex = 2
+    
+    $DataAsOfDateLabel = New-Object System.Windows.Forms.Label
+    $DataAsOfDateLabel.Name = "DataAsOfDateLabel"
+    $DataAsOfDateLabel.AutoSize = $True
+    $DataAsOfDateLabel.Font = New-Object System.Drawing.Font($Script:FormFont.Name, ($Script:FormFont.Size + 2), [System.Drawing.FontStyle]::Bold)
+    $DataAsOfDateLabel.Left = 308
+    $DataAsOfDateLabel.Text = "Input Data as of Pay Period Ending: " + $Script:BeginningOfPayPeriod.AddDays(-1).ToString("MM/dd/yyyy") #Subtract one day so it's the end of the previous pay period matching what's in MyPay.
+    $DataAsOfDateLabel.Top = 10
 
     $LeaveBalancesLabel = New-Object System.Windows.Forms.Label
     $LeaveBalancesLabel.Name = "LeaveBalancesLabel"
     $LeaveBalancesLabel.AutoSize = $True
-    $LeaveBalancesLabel.Left = 60
-    $LeaveBalancesLabel.Text = "Leave Balances as of Pay Period Ending: " + $Script:BeginningOfPayPeriod.AddDays(-1).ToString("MM/dd/yyyy") #Subtract one day so it's the end of the previous pay period matching what's in MyPay.
-    $LeaveBalancesLabel.Top = 5
+    $LeaveBalancesLabel.Font = New-Object System.Drawing.Font($Script:FormFont.Name, $Script:FormFont.Size, [System.Drawing.FontStyle]::Bold)
+    $LeaveBalancesLabel.Left = 204
+    $LeaveBalancesLabel.Text = "Leave Balances"
+    $LeaveBalancesLabel.Top = 40
 
     $ProjectedLeaveLabel = New-Object System.Windows.Forms.Label
     $ProjectedLeaveLabel.Name = "ProjectedLeaveLabel"
     $ProjectedLeaveLabel.AutoSize = $True
-    $ProjectedLeaveLabel.Left = 609
+    $ProjectedLeaveLabel.Font = New-Object System.Drawing.Font($Script:FormFont.Name, $Script:FormFont.Size, [System.Drawing.FontStyle]::Bold)
+    $ProjectedLeaveLabel.Left = 640
     $ProjectedLeaveLabel.Text = "Projected Leave"
-    $ProjectedLeaveLabel.Top = 5
+    $ProjectedLeaveLabel.Top = 40
 
     $BalanceAddButton = New-Object System.Windows.Forms.Button
     $BalanceAddButton.Name = "BalanceAddButton"
     $BalanceAddButton.AutoSize = $True
     $BalanceAddButton.Font = $Script:IconsFont
     $BalanceAddButton.ForeColor = "Green"
-    $BalanceAddButton.Left = 127
+    $BalanceAddButton.Left = 139
     $BalanceAddButton.Text = [char]0xF8AA #+ Symbol
-    $BalanceAddButton.Top = 325
+    $BalanceAddButton.Top = 342
 
     $BalanceEditButton = New-Object System.Windows.Forms.Button
     $BalanceEditButton.Name = "BalanceEditButton"
     $BalanceEditButton.AutoSize = $True
     $BalanceEditButton.Font = $Script:IconsFont
     $BalanceEditButton.ForeColor = "Orange"
-    $BalanceEditButton.Left = 166
+    $BalanceEditButton.Left = 214
     $BalanceEditButton.Text = [char]0xE70F #Pencil/Edit Symbol
-    $BalanceEditButton.Top = 325
+    $BalanceEditButton.Top = 342
     
     $BalanceDeleteButton = New-Object System.Windows.Forms.Button
     $BalanceDeleteButton.Name = "BalanceDeleteButton"
     $BalanceDeleteButton.AutoSize = $True
     $BalanceDeleteButton.Font = $Script:IconsFont
     $BalanceDeleteButton.ForeColor = "Red"
-    $BalanceDeleteButton.Left = 206
+    $BalanceDeleteButton.Left = 289
     $BalanceDeleteButton.Text = [char]0xF78A #X Symbol
-    $BalanceDeleteButton.Top = 325
+    $BalanceDeleteButton.Top = 342
     
     $ProjectedAddButton = New-Object System.Windows.Forms.Button
     $ProjectedAddButton.Name = "ProjectedAddButton"
     $ProjectedAddButton.AutoSize = $True
     $ProjectedAddButton.Font = $Script:IconsFont
     $ProjectedAddButton.ForeColor = "Green"
-    $ProjectedAddButton.Left = 604
+    $ProjectedAddButton.Left = 578
     $ProjectedAddButton.Text = [char]0xF8AA #+ Symbol
-    $ProjectedAddButton.Top = 325
+    $ProjectedAddButton.Top = 342
     
     $ProjectedEditButton = New-Object System.Windows.Forms.Button
     $ProjectedEditButton.Name = "ProjectedEditButton"
@@ -3779,9 +3829,9 @@ function BuildMainForm
     $ProjectedEditButton.Enabled = $False
     $ProjectedEditButton.Font = $Script:IconsFont
     $ProjectedEditButton.ForeColor = "Orange"
-    $ProjectedEditButton.Left = 643
+    $ProjectedEditButton.Left = 653
     $ProjectedEditButton.Text = [char]0xE70F #Pencil/Edit Symbol
-    $ProjectedEditButton.Top = 325
+    $ProjectedEditButton.Top = 342
     
     $ProjectedDeleteButton = New-Object System.Windows.Forms.Button
     $ProjectedDeleteButton.Name = "ProjectedDeleteButton"
@@ -3789,29 +3839,29 @@ function BuildMainForm
     $ProjectedDeleteButton.Enabled = $False
     $ProjectedDeleteButton.Font = $Script:IconsFont
     $ProjectedDeleteButton.ForeColor = "Red"
-    $ProjectedDeleteButton.Left = 689
+    $ProjectedDeleteButton.Left = 728
     $ProjectedDeleteButton.Text = [char]0xF78A #X Symbol
-    $ProjectedDeleteButton.Top = 325
+    $ProjectedDeleteButton.Top = 342
     
     $BalanceListBox = New-Object System.Windows.Forms.ListBox
     $BalanceListBox.Name = "BalanceListBox"
     $BalanceListBox.Height = 277
-    $BalanceListBox.Left = 75
-    $BalanceListBox.Top = 30
+    $BalanceListBox.Left = 64
+    $BalanceListBox.Top = 60
     $BalanceListBox.Width = 375
 
     $ProjectedListBox = New-Object System.Windows.Forms.CheckedListBox
     $ProjectedListBox.Name = "ProjectedListBox"
     $ProjectedListBox.CheckOnClick = $True
     $ProjectedListBox.Height = 277
-    $ProjectedListBox.Left = 490
-    $ProjectedListBox.Top = 30
+    $ProjectedListBox.Left = 503
+    $ProjectedListBox.Top = 60
     $ProjectedListBox.Width = 375
 
     $MainForm.Controls.AddRange(($LeavePanel, $SettingsPanel, $ReportPanel))
     $SettingsPanel.Controls.AddRange(($SCDLeaveDateLabel, $SCDLeaveDateDateTimePicker, $UpdateInfoButton, $LengthOfServiceTextBox, $EmployeeTypeTextBox, $DisplayBalanceEveryLeaveCheckBox, $DisplayBalanceEveryPayPeriodEnd, $DisplayLeaveHighsAndLows))
-    $ReportPanel.Controls.AddRange(($ProjectBalanceRadioButton, $ReachGoalRadioButton, $ProjectToDateDateTimePicker, $AnnualGoalLabel, $AnnualGoalNumericUpDown, $SickGoalLabel, $SickGoalNumericUpDown, $ProjectButton))
-    $LeavePanel.Controls.AddRange(($LeaveBalancesLabel, $ProjectedLeaveLabel, $BalanceListBox, $BalanceAddButton, $BalanceEditButton, $BalanceDeleteButton, $ProjectedListBox, $ProjectedAddButton, $ProjectedEditButton, $ProjectedDeleteButton))
+    $ReportPanel.Controls.AddRange(($ProjectBalanceRadioButton, $ReachGoalRadioButton, $ProjectToDateDateTimePicker, $AnnualGoalLabel, $AnnualGoalNumericUpDown, $SickGoalLabel, $SickGoalNumericUpDown, $ProjectToEndOfPayPeriodLabel, $ProjectButton))
+    $LeavePanel.Controls.AddRange(($DataAsOfDateLabel, $LeaveBalancesLabel, $ProjectedLeaveLabel, $BalanceListBox, $BalanceAddButton, $BalanceEditButton, $BalanceDeleteButton, $ProjectedListBox, $ProjectedAddButton, $ProjectedEditButton, $ProjectedDeleteButton))
     
     #Select/Check the appropriate things.
 
@@ -3850,6 +3900,8 @@ function BuildMainForm
 
     $ProjectToDateDateTimePicker.Value = $Script:ProjectToDate
 
+    $ProjectToEndOfPayPeriodLabel.Text = "Will Project Through Pay Period Ending: " + (GetEndingOfPayPeriodForDate -Date $Script:ProjectToDate).ToString("MM/dd/yyyy")
+    
     $AnnualGoalNumericUpDown.Value = $Script:AnnualGoal
     $SickGoalNumericUpDown.Value   = $Script:SickGoal
 
@@ -3919,161 +3971,146 @@ function BuildEmployeeInfoForm
     $EmployeeInfoForm.Font            = $Script:FormFont
     $EmployeeInfoForm.FormBorderStyle = "FixedSingle"
     $EmployeeInfoForm.MaximizeBox     = $False
-    $EmployeeInfoForm.Size            = New-Object System.Drawing.Size(291, 451)
+    $EmployeeInfoForm.Size            = New-Object System.Drawing.Size(305, 471)
     $EmployeeInfoForm.Text            = "Employee Information"
     $EmployeeInfoForm.WindowState     = "Normal"
 
     $EmployeeInfoOkButton = New-Object System.Windows.Forms.Button
     $EmployeeInfoOkButton.Name = "EmployeeInfoOkButton"
-    $EmployeeInfoOkButton.Height = 24
     $EmployeeInfoOkButton.Left = 49
     $EmployeeInfoOkButton.Text = "OK"
-    $EmployeeInfoOkButton.Top = 377
-    $EmployeeInfoOkButton.Width = 75
+    $EmployeeInfoOkButton.Top = 397
     
     $EmployeeInfoCancelButton = New-Object System.Windows.Forms.Button
     $EmployeeInfoCancelButton.Name = "EmployeeInfoCancelButton"
-    $EmployeeInfoCancelButton.Height = 24
     $EmployeeInfoCancelButton.Left = 162
     $EmployeeInfoCancelButton.Text = "Cancel"
-    $EmployeeInfoCancelButton.Top = 377
-    $EmployeeInfoCancelButton.Width = 75
+    $EmployeeInfoCancelButton.Top = 397
     
     $EmployeeTypePanel = New-Object System.Windows.Forms.Panel
     $EmployeeTypePanel.Name = "EmployeeTypePanel"
     $EmployeeTypePanel.Height = 76
-    $EmployeeTypePanel.Width = 123
+    $EmployeeTypePanel.Width = 110
 
     $FullTimeRadioButton = New-Object System.Windows.Forms.RadioButton
     $FullTimeRadioButton.Name = "FullTimeRadioButton"
+    $FullTimeRadioButton.AutoSize = $True
     $FullTimeRadioButton.Text = "Full-Time"
     $FullTimeRadioButton.Top = 15
-    $FullTimeRadioButton.Width = 70
 
     $PartTimeRadioButton = New-Object System.Windows.Forms.RadioButton
     $PartTimeRadioButton.Name = "PartTimeRadioButton"
+    $PartTimeRadioButton.AutoSize = $True
     $PartTimeRadioButton.Text = "Part-Time"
     $PartTimeRadioButton.Top = 33
-    $PartTimeRadioButton.Width = 72
 
     $SESRadioButton = New-Object System.Windows.Forms.RadioButton
     $SESRadioButton.Name = "SESRadioButton"
+    $SESRadioButton.AutoSize = $True
     $SESRadioButton.Text = "SES"
     $SESRadioButton.Top = 51
-    $SESRadioButton.Width = 66
 
     $EmploymentTypeLabel = New-Object System.Windows.Forms.Label
     $EmploymentTypeLabel.Name = "EmploymentTypeLabel"
-    $EmploymentTypeLabel.Height = 17
+    $EmploymentTypeLabel.AutoSize = $True
     $EmploymentTypeLabel.Text = "Employment Type:"
-    $EmploymentTypeLabel.Width = 99
 
     $LeaveCeilingPanel = New-Object System.Windows.Forms.Panel
     $LeaveCeilingPanel.Name = "LeaveCeilingPanel"
     $LeaveCeilingPanel.Height = 76
     $LeaveCeilingPanel.Left = 130
-    $LeaveCeilingPanel.Width = 135
+    $LeaveCeilingPanel.Width = 140
 
     $LeaveCeilingLabel = New-Object System.Windows.Forms.Label
     $LeaveCeilingLabel.Name = "LeaveCeilingLabel"
-    $LeaveCeilingLabel.Height = 17
+    $LeaveCeilingLabel.AutoSize = $True
     $LeaveCeilingLabel.Text = "Leave Ceiling:"
-    $LeaveCeilingLabel.Width = 76
 
     $CONUSRadioButton = New-Object System.Windows.Forms.RadioButton
     $CONUSRadioButton.Name = "CONUSRadioButton"
-    $CONUSRadioButton.Text = "CONUS (240 Hours)"
+    $CONUSRadioButton.AutoSize = $True
+    $CONUSRadioButton.Text = "CONUS    (240 Hours)"
     $CONUSRadioButton.Top = 15
-    $CONUSRadioButton.Width = 126
 
     $OCONUSRadioButton = New-Object System.Windows.Forms.RadioButton
     $OCONUSRadioButton.Name = "OCONUSRadioButton"
+    $OCONUSRadioButton.AutoSize = $True
     $OCONUSRadioButton.Text = "OCONUS (360 Hours)"
     $OCONUSRadioButton.Top = 33
-    $OCONUSRadioButton.Width = 135
 
     $SESCeilingRadioButton = New-Object System.Windows.Forms.RadioButton
     $SESCeilingRadioButton.Name = "SESCeilingRadioButton"
-    $SESCeilingRadioButton.Text = "SES (720 Hours)"
+    $SESCeilingRadioButton.AutoSize = $True
+    $SESCeilingRadioButton.Text = "SES           (720 Hours)"
     $SESCeilingRadioButton.Top = 51
-    $SESCeilingRadioButton.Width = 108
 
     $InaugurationDayHolidayCheckBox = New-Object System.Windows.Forms.CheckBox
     $InaugurationDayHolidayCheckBox.Name = "InaugurationDayHolidayCheckBox"
-    $InaugurationDayHolidayCheckBox.Left = 25
+    $InaugurationDayHolidayCheckBox.AutoSize = $True
+    $InaugurationDayHolidayCheckBox.Left = 20
     $InaugurationDayHolidayCheckBox.Text = "Entitled to a Holiday on Inauguration Day"
     $InaugurationDayHolidayCheckBox.Top = 78
-    $InaugurationDayHolidayCheckBox.Width = 229
-
+    
     $Week1Label = New-Object System.Windows.Forms.Label
     $Week1Label.Name = "Week1Label"
-    $Week1Label.Height = 17
+    $Week1Label.AutoSize = $True
     $Week1Label.Left = 72
-    $Week1Label.Text = "Week 1"
-    $Week1Label.Top = 118
-    $Week1Label.Width = 42
+    $Week1Label.Text = "Week 1:"
+    $Week1Label.Top = 115
 
     $Week2Label = New-Object System.Windows.Forms.Label
     $Week2Label.Name = "Week2Label"
-    $Week2Label.Height = 17
+    $Week2Label.AutoSize = $True
     $Week2Label.Left = 175
-    $Week2Label.Text = "Week 2"
-    $Week2Label.Top = 118
-    $Week2Label.Width = 42
+    $Week2Label.Text = "Week 2:"
+    $Week2Label.Top = 115
 
     $SundayLabel = New-Object System.Windows.Forms.Label
     $SundayLabel.Name = "SundayLabel"
-    $SundayLabel.Height = 17
-    $SundayLabel.Text = "Sunday"
+    $SundayLabel.AutoSize = $True
+    $SundayLabel.Text = "Sunday:"
     $SundayLabel.Top = 138
-    $SundayLabel.Width = 43
 
     $MondayLabel = New-Object System.Windows.Forms.Label
     $MondayLabel.Name = "MondayLabel"
-    $MondayLabel.Height = 17
-    $MondayLabel.Text = "Monday"
-    $MondayLabel.Top = 168
-    $MondayLabel.Width = 44
+    $MondayLabel.AutoSize = $True
+    $MondayLabel.Text = "Monday:"
+    $MondayLabel.Top = 169
 
     $TuesdayLabel = New-Object System.Windows.Forms.Label
     $TuesdayLabel.Name = "TuesdayLabel"
-    $TuesdayLabel.Height = 17
-    $TuesdayLabel.Text = "Tuesday"
-    $TuesdayLabel.Top = 195
-    $TuesdayLabel.Width = 48
+    $TuesdayLabel.AutoSize = $True
+    $TuesdayLabel.Text = "Tuesday:"
+    $TuesdayLabel.Top = 200
 
     $WednesdayLabel = New-Object System.Windows.Forms.Label
     $WednesdayLabel.Name = "WednesdayLabel"
-    $WednesdayLabel.Height = 17
-    $WednesdayLabel.Text = "Wednesday"
-    $WednesdayLabel.Top = 225
-    $WednesdayLabel.Width = 64
+    $WednesdayLabel.AutoSize = $True
+    $WednesdayLabel.Text = "Wednesday:"
+    $WednesdayLabel.Top = 231
 
     $ThursdayLabel = New-Object System.Windows.Forms.Label
     $ThursdayLabel.Name = "ThursdayLabel"
-    $ThursdayLabel.Height = 17
-    $ThursdayLabel.Text = "Thursday"
-    $ThursdayLabel.Top = 255
-    $ThursdayLabel.Width = 51
+    $ThursdayLabel.AutoSize = $True
+    $ThursdayLabel.Text = "Thursday:"
+    $ThursdayLabel.Top = 262
 
     $FridayLabel = New-Object System.Windows.Forms.Label
     $FridayLabel.Name = "FridayLabel"
-    $FridayLabel.Height = 17
-    $FridayLabel.Text = "Friday"
-    $FridayLabel.Top = 282
-    $FridayLabel.Width = 36
+    $FridayLabel.AutoSize = $True
+    $FridayLabel.Text = "Friday:"
+    $FridayLabel.Top = 293
 
     $SaturdayLabel = New-Object System.Windows.Forms.Label
     $SaturdayLabel.Name = "SaturdayLabel"
-    $SaturdayLabel.Height = 17
-    $SaturdayLabel.Text = "Saturday"
-    $SaturdayLabel.Top = 309
-    $SaturdayLabel.Width = 50
+    $SaturdayLabel.AutoSize = $True
+    $SaturdayLabel.Text = "Saturday:"
+    $SaturdayLabel.Top = 324
 
     $Day1NumericUpDown = New-Object System.Windows.Forms.NumericUpDown
     $Day1NumericUpDown.Name = "Day1NumericUpDown"
     $Day1NumericUpDown.Height = 20
-    $Day1NumericUpDown.Left = 73
+    $Day1NumericUpDown.Left = 76
     $Day1NumericUpDown.Maximum = 24
     $Day1NumericUpDown.Top = 135
     $Day1NumericUpDown.Width = 40
@@ -4081,7 +4118,7 @@ function BuildEmployeeInfoForm
     $Day2NumericUpDown = New-Object System.Windows.Forms.NumericUpDown
     $Day2NumericUpDown.Name = "Day2NumericUpDown"
     $Day2NumericUpDown.Height = 20
-    $Day2NumericUpDown.Left = 73
+    $Day2NumericUpDown.Left = 76
     $Day2NumericUpDown.Maximum = 24
     $Day2NumericUpDown.Top = 166
     $Day2NumericUpDown.Width = 40
@@ -4089,47 +4126,47 @@ function BuildEmployeeInfoForm
     $Day3NumericUpDown = New-Object System.Windows.Forms.NumericUpDown
     $Day3NumericUpDown.Name = "Day3NumericUpDown"
     $Day3NumericUpDown.Height = 20
-    $Day3NumericUpDown.Left = 73
+    $Day3NumericUpDown.Left = 76
     $Day3NumericUpDown.Maximum = 24
-    $Day3NumericUpDown.Top = 194
+    $Day3NumericUpDown.Top = 197
     $Day3NumericUpDown.Width = 40
 
     $Day4NumericUpDown = New-Object System.Windows.Forms.NumericUpDown
     $Day4NumericUpDown.Name = "Day4NumericUpDown"
     $Day4NumericUpDown.Height = 20
-    $Day4NumericUpDown.Left = 73
+    $Day4NumericUpDown.Left = 76
     $Day4NumericUpDown.Maximum = 24
-    $Day4NumericUpDown.Top = 221
+    $Day4NumericUpDown.Top = 228
     $Day4NumericUpDown.Width = 40
 
     $Day5NumericUpDown = New-Object System.Windows.Forms.NumericUpDown
     $Day5NumericUpDown.Name = "Day5NumericUpDown"
     $Day5NumericUpDown.Height = 20
-    $Day5NumericUpDown.Left = 73
+    $Day5NumericUpDown.Left = 76
     $Day5NumericUpDown.Maximum = 24
-    $Day5NumericUpDown.Top = 250
+    $Day5NumericUpDown.Top = 259
     $Day5NumericUpDown.Width = 40
 
     $Day6NumericUpDown = New-Object System.Windows.Forms.NumericUpDown
     $Day6NumericUpDown.Name = "Day6NumericUpDown"
     $Day6NumericUpDown.Height = 20
-    $Day6NumericUpDown.Left = 73
+    $Day6NumericUpDown.Left = 76
     $Day6NumericUpDown.Maximum = 24
-    $Day6NumericUpDown.Top = 277
+    $Day6NumericUpDown.Top = 290
     $Day6NumericUpDown.Width = 40
 
     $Day7NumericUpDown = New-Object System.Windows.Forms.NumericUpDown
     $Day7NumericUpDown.Name = "Day7NumericUpDown"
     $Day7NumericUpDown.Height = 20
-    $Day7NumericUpDown.Left = 73
+    $Day7NumericUpDown.Left = 76
     $Day7NumericUpDown.Maximum = 24
-    $Day7NumericUpDown.Top = 305
+    $Day7NumericUpDown.Top = 321
     $Day7NumericUpDown.Width = 40
     
     $Day8NumericUpDown = New-Object System.Windows.Forms.NumericUpDown
     $Day8NumericUpDown.Name = "Day8NumericUpDown"
     $Day8NumericUpDown.Height = 20
-    $Day8NumericUpDown.Left = 177
+    $Day8NumericUpDown.Left = 180
     $Day8NumericUpDown.Maximum = 24
     $Day8NumericUpDown.Top = 135
     $Day8NumericUpDown.Width = 40
@@ -4137,7 +4174,7 @@ function BuildEmployeeInfoForm
     $Day9NumericUpDown = New-Object System.Windows.Forms.NumericUpDown
     $Day9NumericUpDown.Name = "Day9NumericUpDown"
     $Day9NumericUpDown.Height = 20
-    $Day9NumericUpDown.Left = 177
+    $Day9NumericUpDown.Left = 180
     $Day9NumericUpDown.Maximum = 24
     $Day9NumericUpDown.Top = 166
     $Day9NumericUpDown.Width = 40
@@ -4145,62 +4182,60 @@ function BuildEmployeeInfoForm
     $Day10NumericUpDown = New-Object System.Windows.Forms.NumericUpDown
     $Day10NumericUpDown.Name = "Day10NumericUpDown"
     $Day10NumericUpDown.Height = 20
-    $Day10NumericUpDown.Left = 177
+    $Day10NumericUpDown.Left = 180
     $Day10NumericUpDown.Maximum = 24
-    $Day10NumericUpDown.Top = 194
+    $Day10NumericUpDown.Top = 197
     $Day10NumericUpDown.Width = 40
 
     $Day11NumericUpDown = New-Object System.Windows.Forms.NumericUpDown
     $Day11NumericUpDown.Name = "Day11NumericUpDown"
     $Day11NumericUpDown.Height = 20
-    $Day11NumericUpDown.Left = 177
+    $Day11NumericUpDown.Left = 180
     $Day11NumericUpDown.Maximum = 24
-    $Day11NumericUpDown.Top = 221
+    $Day11NumericUpDown.Top = 228
     $Day11NumericUpDown.Width = 40
 
     $Day12NumericUpDown = New-Object System.Windows.Forms.NumericUpDown
     $Day12NumericUpDown.Name = "Day12NumericUpDown"
     $Day12NumericUpDown.Height = 20
-    $Day12NumericUpDown.Left = 177
+    $Day12NumericUpDown.Left = 180
     $Day12NumericUpDown.Maximum = 24
-    $Day12NumericUpDown.Top = 250
+    $Day12NumericUpDown.Top = 259
     $Day12NumericUpDown.Width = 40
 
     $Day13NumericUpDown = New-Object System.Windows.Forms.NumericUpDown
     $Day13NumericUpDown.Name = "Day13NumericUpDown"
     $Day13NumericUpDown.Height = 20
-    $Day13NumericUpDown.Left = 177
+    $Day13NumericUpDown.Left = 180
     $Day13NumericUpDown.Maximum = 24
-    $Day13NumericUpDown.Top = 277
+    $Day13NumericUpDown.Top = 290
     $Day13NumericUpDown.Width = 40
 
     $Day14NumericUpDown = New-Object System.Windows.Forms.NumericUpDown
     $Day14NumericUpDown.Name = "Day14NumericUpDown"
     $Day14NumericUpDown.Height = 20
-    $Day14NumericUpDown.Left = 177
+    $Day14NumericUpDown.Left = 180
     $Day14NumericUpDown.Maximum = 24
-    $Day14NumericUpDown.Top = 305
+    $Day14NumericUpDown.Top = 321
     $Day14NumericUpDown.Width = 40
 
     $HoursWorkedLabel = New-Object System.Windows.Forms.Label
     $HoursWorkedLabel.Name = "HoursWorkedLabel"
-    $HoursWorkedLabel.Height = 17
-    $HoursWorkedLabel.Top = 335
-    $HoursWorkedLabel.Width = 150
+    $HoursWorkedLabel.AutoSize = $True
+    $HoursWorkedLabel.Top = 355
     $HoursWorkedLabel.Text = "Hours Per Pay Period: " + $Script:WorkHoursPerPayPeriod
 
     $UnusualHoursLabel = New-Object System.Windows.Forms.Label
     $UnusualHoursLabel.Name = "UnusualHoursLabel"
+    $UnusualHoursLabel.AutoSize = $True
     $UnusualHoursLabel.ForeColor = "Blue"
-    $UnusualHoursLabel.Height = 17
     $UnusualHoursLabel.Text = "Please validate unusual hours."
-    $UnusualHoursLabel.Top = 355
+    $UnusualHoursLabel.Top = 375
     $UnusualHoursLabel.Visible = $False
-    $UnusualHoursLabel.Width = 200
 
     $EmployeeInfoForm.Controls.AddRange(($EmployeeInfoOkButton, $EmployeeInfoCancelButton, $EmployeeTypePanel, $LeaveCeilingPanel, $InaugurationDayHolidayCheckBox, $Week1Label, $Week2Label, $SundayLabel, $MondayLabel, $TuesdayLabel, $WednesdayLabel, $ThursdayLabel, $FridayLabel, $SaturdayLabel, $Day1NumericUpDown, $Day2NumericUpDown, $Day3NumericUpDown, $Day4NumericUpDown, $Day5NumericUpDown, $Day6NumericUpDown, $Day7NumericUpDown, $Day8NumericUpDown, $Day9NumericUpDown, $Day10NumericUpDown, $Day11NumericUpDown, $Day12NumericUpDown, $Day13NumericUpDown, $Day14NumericUpDown, $HoursWorkedLabel, $UnusualHoursLabel))
     $EmployeeTypePanel.Controls.AddRange(($FullTimeRadioButton, $PartTimeRadioButton, $SESRadioButton, $EmploymentTypeLabel))
-    $LeaveCeilingPanel.Controls.AddRange(($LeaveCeilingLabel, $CONUSRadioButton, $OCONUSRadioButton, $SESCeilingRadioButton))
+    $LeaveCeilingPanel.Controls.AddRange(($CONUSRadioButton, $OCONUSRadioButton, $SESCeilingRadioButton, $LeaveCeilingLabel))
 
     #Select/Check the appropriate things.
 
@@ -4288,84 +4323,80 @@ function BuildEditLeaveBalanceForm
     $EditLeaveBalanceForm.Font            = $Script:FormFont
     $EditLeaveBalanceForm.FormBorderStyle = "FixedSingle"
     $EditLeaveBalanceForm.MaximizeBox     = $False
-    $EditLeaveBalanceForm.Size            = New-Object System.Drawing.Size(283, 204)
+    $EditLeaveBalanceForm.Size            = New-Object System.Drawing.Size(260, 204)
     $EditLeaveBalanceForm.Text            = "Edit Leave"
     $EditLeaveBalanceForm.WindowState     = "Normal"
 
     $LeaveBalanceNameLabel = New-Object System.Windows.Forms.Label
     $LeaveBalanceNameLabel.Name = "LeaveBalanceNameLabel"
-    $LeaveBalanceNameLabel.Height = 17
+    $LeaveBalanceNameLabel.AutoSize = $True
     $LeaveBalanceNameLabel.Left = 13
     $LeaveBalanceNameLabel.Text = "Type of Leave:"
     $LeaveBalanceNameLabel.Top = 14
-    $LeaveBalanceNameLabel.Width = 79
 
     $LeaveBalanceNameTextBox = New-Object System.Windows.Forms.TextBox
     $LeaveBalanceNameTextBox.Name = "LeaveBalanceNameTextBox"
     $LeaveBalanceNameTextBox.Height = 20
-    $LeaveBalanceNameTextBox.Left = 102
+    $LeaveBalanceNameTextBox.Left = 110
     $LeaveBalanceNameTextBox.Text = $SelectedLeaveBalance.Name
     $LeaveBalanceNameTextBox.Top = 11
-    $LeaveBalanceNameTextBox.Width = 160
+    $LeaveBalanceNameTextBox.Width = 100
 
     $BalanceLabel = New-Object System.Windows.Forms.Label
     $BalanceLabel.Name = "BalanceLabel"
-    $BalanceLabel.Height = 17
+    $BalanceLabel.AutoSize = $True
     $BalanceLabel.Left = 13
     $BalanceLabel.Text = "Balance:"
-    $BalanceLabel.Top = 39
-    $BalanceLabel.Width = 48
+    $BalanceLabel.Top = 41
 
     $BalanceNumericUpDown = New-Object System.Windows.Forms.NumericUpDown
     $BalanceNumericUpDown.Name = "BalanceNumericUpDown"
     $BalanceNumericUpDown.Height = 20
-    $BalanceNumericUpDown.Left = 102
+    $BalanceNumericUpDown.Left = 110
     $BalanceNumericUpDown.Maximum = $Script:MaximumSick #Largest feasible amount for any type of leave, not just sick. Adjusted if type is Annual leave.
-    $BalanceNumericUpDown.Top = 36
+    $BalanceNumericUpDown.Top = 38
     $BalanceNumericUpDown.Value = $SelectedLeaveBalance.Balance
     $BalanceNumericUpDown.Width = 54
 
     $AlertThresholdLabel = New-Object System.Windows.Forms.Label
     $AlertThresholdLabel.Name = "AlertThresholdLabel"
-    $AlertThresholdLabel.Height = 17
+    $AlertThresholdLabel.AutoSize = $True
     $AlertThresholdLabel.Left = 13
     $AlertThresholdLabel.Text = "Alert Threshold:"
-    $AlertThresholdLabel.Top = 65
-    $AlertThresholdLabel.Width = 85
+    $AlertThresholdLabel.Top = 68
 
     $ThresholdNumericUpDown = New-Object System.Windows.Forms.NumericUpDown
     $ThresholdNumericUpDown.Name = "ThresholdNumericUpDown"
     $ThresholdNumericUpDown.Height = 20
-    $ThresholdNumericUpDown.Left = 102
+    $ThresholdNumericUpDown.Left = 110
     $ThresholdNumericUpDown.Maximum = $Script:MaximumSick #Adjusted if type is Annual leave.
     $ThresholdNumericUpDown.Top = 65
     $ThresholdNumericUpDown.Width = 54
 
     $LeaveExpiresCheckBox = New-Object System.Windows.Forms.CheckBox
     $LeaveExpiresCheckBox.Name = "LeaveExpiresCheckBox"
-    $LeaveExpiresCheckBox.Left = 13
+    $LeaveExpiresCheckBox.Left = 15
     $LeaveExpiresCheckBox.Text = "Leave Expires"
-    $LeaveExpiresCheckBox.Top = 57
+    $LeaveExpiresCheckBox.Top = 60
     $LeaveExpiresCheckBox.Width = 104
     
     $LeaveExpiresOnLabel = New-Object System.Windows.Forms.Label
     $LeaveExpiresOnLabel.Name = "LeaveExpiresOnLabel"
-    $LeaveExpiresOnLabel.Height = 17
+    $LeaveExpiresOnLabel.AutoSize = $True
     $LeaveExpiresOnLabel.Left = 13
     $LeaveExpiresOnLabel.Text = "Expires On:"
-    $LeaveExpiresOnLabel.Top = 87
+    $LeaveExpiresOnLabel.Top = 89
     $LeaveExpiresOnLabel.Visible = $False
-    $LeaveExpiresOnLabel.Width = 63
     
     $LeaveExpiresOnDateTimePicker = New-Object System.Windows.Forms.DateTimePicker
     $LeaveExpiresOnDateTimePicker.Name = "LeaveExpiresOnDateTimePicker"
     $LeaveExpiresOnDateTimePicker.Enabled = $False
     $LeaveExpiresOnDateTimePicker.Format = "Short"
-    $LeaveExpiresOnDateTimePicker.Left = 87
+    $LeaveExpiresOnDateTimePicker.Left = 110
     $LeaveExpiresOnDateTimePicker.MinDate = $Script:BeginningOfPayPeriod
-    $LeaveExpiresOnDateTimePicker.Top = 83
+    $LeaveExpiresOnDateTimePicker.Top = 85
     $LeaveExpiresOnDateTimePicker.Visible = $False
-    $LeaveExpiresOnDateTimePicker.Width = 95
+    $LeaveExpiresOnDateTimePicker.Width = 100
 
     $WarningLabel = New-Object System.Windows.Forms.Label
     $WarningLabel.Name = "WarningLabel"
@@ -4378,7 +4409,7 @@ function BuildEditLeaveBalanceForm
     $EditLeaveOkButton = New-Object System.Windows.Forms.Button
     $EditLeaveOkButton.Name = "EditLeaveOkButton"
     $EditLeaveOkButton.Height = 24
-    $EditLeaveOkButton.Left = 46
+    $EditLeaveOkButton.Left = 40
     $EditLeaveOkButton.Text = "OK"
     $EditLeaveOkButton.Top = 138
     $EditLeaveOkButton.Width = 75
@@ -4386,7 +4417,7 @@ function BuildEditLeaveBalanceForm
     $EditLeaveCancelButton = New-Object System.Windows.Forms.Button
     $EditLeaveCancelButton.Name = "EditLeaveCancelButton"
     $EditLeaveCancelButton.Height = 24
-    $EditLeaveCancelButton.Left = 144
+    $EditLeaveCancelButton.Left = 130
     $EditLeaveCancelButton.Text = "Cancel"
     $EditLeaveCancelButton.Top = 138
     $EditLeaveCancelButton.Width = 75
@@ -4463,87 +4494,83 @@ function BuildEditProjectedLeaveForm
     $EditProjectedLeaveForm.Font            = $Script:FormFont
     $EditProjectedLeaveForm.FormBorderStyle = "FixedSingle"
     $EditProjectedLeaveForm.MaximizeBox     = $False
-    $EditProjectedLeaveForm.Size            = New-Object System.Drawing.Size(455, 470)
+    $EditProjectedLeaveForm.Size            = New-Object System.Drawing.Size(475, 400)
     $EditProjectedLeaveForm.Text            = "Edit Projected Leave"
     $EditProjectedLeaveForm.WindowState     = "Normal"
 
     $LeaveStartLabel = New-Object System.Windows.Forms.Label
     $LeaveStartLabel.Name = "LeaveStartLabel"
-    $LeaveStartLabel.Height = 17
+    $LeaveStartLabel.AutoSize = $True
     $LeaveStartLabel.Left = 15
     $LeaveStartLabel.Text = "Leave Start:"
     $LeaveStartLabel.Top = 41
-    $LeaveStartLabel.Width = 65
 
     $LeaveEndLabel = New-Object System.Windows.Forms.Label
     $LeaveEndLabel.Name = "LeaveEndLabel"
-    $LeaveEndLabel.Height = 17
+    $LeaveEndLabel.AutoSize = $True
     $LeaveEndLabel.Left = 15
     $LeaveEndLabel.Text = "Leave End:"
-    $LeaveEndLabel.Top = 78
-    $LeaveEndLabel.Width = 61
+    $LeaveEndLabel.Top = 67
 
     $LeaveStartDateTimePicker = New-Object System.Windows.Forms.DateTimePicker
     $LeaveStartDateTimePicker.Name = "LeaveStartDateTimePicker"
     $LeaveStartDateTimePicker.Format = "Short"
-    $LeaveStartDateTimePicker.Left = 90
+    $LeaveStartDateTimePicker.Left = 100
     $LeaveStartDateTimePicker.Top = 38
-    $LeaveStartDateTimePicker.Width = 95
+    $LeaveStartDateTimePicker.Width = 115
 
     $LeaveEndDateTimePicker = New-Object System.Windows.Forms.DateTimePicker
     $LeaveEndDateTimePicker.Name = "LeaveEndDateTimePicker"
     $LeaveEndDateTimePicker.Format = "Short"
-    $LeaveEndDateTimePicker.Left = 90
-    $LeaveEndDateTimePicker.Top = 76
-    $LeaveEndDateTimePicker.Width = 95
+    $LeaveEndDateTimePicker.Left = 100
+    $LeaveEndDateTimePicker.Top = 64
+    $LeaveEndDateTimePicker.Width = 115
 
     $LeaveBankLabel = New-Object System.Windows.Forms.Label
     $LeaveBankLabel.Name = "LeaveBankLabel"
-    $LeaveBankLabel.Height = 17
+    $LeaveBankLabel.AutoSize = $True
     $LeaveBankLabel.Left = 15
     $LeaveBankLabel.Text = "Leave Bank:"
     $LeaveBankLabel.Top = 15
-    $LeaveBankLabel.Width = 67
 
     $LeaveBankComboBox = New-Object System.Windows.Forms.ComboBox
     $LeaveBankComboBox.Name = "LeaveBankComboBox"
     $LeaveBankComboBox.DropDownStyle = "DropDownList"
     $LeaveBankComboBox.Tag = @{}
     $LeaveBankComboBox.Top = 12
-    $LeaveBankComboBox.Left = 90
+    $LeaveBankComboBox.Left = 100
     $LeaveBankComboBox.Width = 115
 
     $LeaveDatesFlowLayoutPanel = New-Object System.Windows.Forms.FlowLayoutPanel
     $LeaveDatesFlowLayoutPanel.Name = "LeaveDatesFlowLayoutPanel"
     $LeaveDatesFlowLayoutPanel.AutoScroll = $True
     $LeaveDatesFlowLayoutPanel.FlowDirection = "TopDown"
-    $LeaveDatesFlowLayoutPanel.Height = 250
+    $LeaveDatesFlowLayoutPanel.Height = 198
     $LeaveDatesFlowLayoutPanel.Left = 15
-    $LeaveDatesFlowLayoutPanel.Top = 110
-    $LeaveDatesFlowLayoutPanel.Width = 420
+    $LeaveDatesFlowLayoutPanel.Top = 100
+    $LeaveDatesFlowLayoutPanel.Width = 440
     $LeaveDatesFlowLayoutPanel.WrapContents = $False
 
     $HoursOfLeaveTaken = New-Object System.Windows.Forms.Label
     $HoursOfLeaveTaken.Name = "HoursOfLeaveTaken"
-    $HoursOfLeaveTaken.Left = 10
-    $HoursOfLeaveTaken.Height = 17
-    $HoursOfLeaveTaken.Top = 370
-    $HoursOfLeaveTaken.Width = 150
+    $HoursOfLeaveTaken.AutoSize = $True
+    $HoursOfLeaveTaken.Left = 15
+    $HoursOfLeaveTaken.Top = 305
     
     $EditProjectedOkButton = New-Object System.Windows.Forms.Button
     $EditProjectedOkButton.Name = "EditProjectedOkButton"
     $EditProjectedOkButton.Height = 24
-    $EditProjectedOkButton.Left = 43
+    $EditProjectedOkButton.Left = 130
     $EditProjectedOkButton.Text = "OK"
-    $EditProjectedOkButton.Top = 394
+    $EditProjectedOkButton.Top = 330
     $EditProjectedOkButton.Width = 75
     
     $EditProjectedCancelButton = New-Object System.Windows.Forms.Button
     $EditProjectedCancelButton.Name = "EditProjectedCancelButton"
     $EditProjectedCancelButton.Height = 24
-    $EditProjectedCancelButton.Left = 157
+    $EditProjectedCancelButton.Left = 240
     $EditProjectedCancelButton.Text = "Cancel"
-    $EditProjectedCancelButton.Top = 394
+    $EditProjectedCancelButton.Top = 330
     $EditProjectedCancelButton.Width = 75
 
     $EditProjectedLeaveForm.Controls.AddRange(($LeaveBankLabel, $LeaveStartLabel, $LeaveEndLabel, $LeaveBankComboBox, $LeaveStartDateTimePicker, $LeaveEndDateTimePicker, $LeaveDatesFlowLayoutPanel, $HoursOfLeaveTaken, $EditProjectedOkButton, $EditProjectedCancelButton))
@@ -4642,8 +4669,8 @@ function BuildOutputForm
     $OutputForm.Font            = $Script:FormFont
     $OutputForm.FormBorderStyle = "FixedSingle"
     $OutputForm.MaximizeBox     = $False
-    $OutputForm.Size            = New-Object System.Drawing.Size(450, 643)
-    $OutputForm.Text            = "Projection Results"
+    $OutputForm.Size            = New-Object System.Drawing.Size(460, 643)
+    $OutputForm.Text            = "Projection Report"
     $OutputForm.WindowState     = "Normal"
 
     $OutputRichTextBox = New-Object System.Windows.Forms.RichTextBox
@@ -4657,7 +4684,7 @@ function BuildOutputForm
     $CopyButton = New-Object System.Windows.Forms.Button
     $CopyButton.Name = "CopyButton"
     $CopyButton.Height = 24
-    $CopyButton.Left = 57
+    $CopyButton.Left = 54
     $CopyButton.Text = "Copy"
     $CopyButton.Top = 544
     $CopyButton.Width = 336
@@ -4665,13 +4692,13 @@ function BuildOutputForm
     $CloseButton = New-Object System.Windows.Forms.Button
     $CloseButton.Name = "CloseButton"
     $CloseButton.Height = 24
-    $CloseButton.Left = 57
+    $CloseButton.Left = 54
     $CloseButton.Text = "Close"
     $CloseButton.Top = 577
     $CloseButton.Width = 336
     
     $OutputForm.Controls.AddRange(($OutputRichTextBox, $CopyButton, $CalculateWhenToStartLeaveButton, $CloseButton))
-
+    
     $OutputForm.ActiveControl = $CloseButton
     
     PopulateOutputFormRichTextBox
