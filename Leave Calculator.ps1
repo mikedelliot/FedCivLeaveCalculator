@@ -3595,7 +3595,8 @@ function EndDateCalendarClosedUp
 
 function OutputFormCopyButton
 {
-    Set-Clipboard $Script:OutputForm.Controls["OutputRichTextBox"].Text
+    #Do a few simple RegEx replacements to replace all tab characters with a space and then replace any consecutive spaces with only a single space.
+    Set-Clipboard ($Script:OutputForm.Controls["OutputRichTextBox"].Text -replace "`t+", " " -replace " {2,}", " ")
 }
 
 function OutputFormCloseButton
@@ -3617,7 +3618,7 @@ function BuildMainForm
     $MainForm.Font            = $Script:FormFont
     $MainForm.FormBorderStyle = "FixedSingle"
     $MainForm.MaximizeBox     = $False
-    $MainForm.Size            = New-Object System.Drawing.Size(957, 555)
+    $MainForm.Size            = New-Object System.Drawing.Size(957, 438)
     $MainForm.Text            = "Federal Civilian Leave Calculator"
     $MainForm.WindowState     = "Normal"
     
@@ -3794,7 +3795,7 @@ function BuildMainForm
     $BalanceAddButton.ForeColor = "Green"
     $BalanceAddButton.Left = 139
     $BalanceAddButton.Text = [char]0xF8AA #+ Symbol
-    $BalanceAddButton.Top = 342
+    $BalanceAddButton.Top = 225
 
     $BalanceEditButton = New-Object System.Windows.Forms.Button
     $BalanceEditButton.Name = "BalanceEditButton"
@@ -3803,7 +3804,7 @@ function BuildMainForm
     $BalanceEditButton.ForeColor = "Orange"
     $BalanceEditButton.Left = 214
     $BalanceEditButton.Text = [char]0xE70F #Pencil/Edit Symbol
-    $BalanceEditButton.Top = 342
+    $BalanceEditButton.Top = 225
     
     $BalanceDeleteButton = New-Object System.Windows.Forms.Button
     $BalanceDeleteButton.Name = "BalanceDeleteButton"
@@ -3812,7 +3813,7 @@ function BuildMainForm
     $BalanceDeleteButton.ForeColor = "Red"
     $BalanceDeleteButton.Left = 289
     $BalanceDeleteButton.Text = [char]0xF78A #X Symbol
-    $BalanceDeleteButton.Top = 342
+    $BalanceDeleteButton.Top = 225
     
     $ProjectedAddButton = New-Object System.Windows.Forms.Button
     $ProjectedAddButton.Name = "ProjectedAddButton"
@@ -3821,7 +3822,7 @@ function BuildMainForm
     $ProjectedAddButton.ForeColor = "Green"
     $ProjectedAddButton.Left = 578
     $ProjectedAddButton.Text = [char]0xF8AA #+ Symbol
-    $ProjectedAddButton.Top = 342
+    $ProjectedAddButton.Top = 225
     
     $ProjectedEditButton = New-Object System.Windows.Forms.Button
     $ProjectedEditButton.Name = "ProjectedEditButton"
@@ -3831,7 +3832,7 @@ function BuildMainForm
     $ProjectedEditButton.ForeColor = "Orange"
     $ProjectedEditButton.Left = 653
     $ProjectedEditButton.Text = [char]0xE70F #Pencil/Edit Symbol
-    $ProjectedEditButton.Top = 342
+    $ProjectedEditButton.Top = 225
     
     $ProjectedDeleteButton = New-Object System.Windows.Forms.Button
     $ProjectedDeleteButton.Name = "ProjectedDeleteButton"
@@ -3841,11 +3842,12 @@ function BuildMainForm
     $ProjectedDeleteButton.ForeColor = "Red"
     $ProjectedDeleteButton.Left = 728
     $ProjectedDeleteButton.Text = [char]0xF78A #X Symbol
-    $ProjectedDeleteButton.Top = 342
+    $ProjectedDeleteButton.Top = 225
     
     $BalanceListBox = New-Object System.Windows.Forms.ListBox
     $BalanceListBox.Name = "BalanceListBox"
-    $BalanceListBox.Height = 277
+    $BalanceListBox.Height = 155
+    $BalanceListBox.IntegralHeight = $False
     $BalanceListBox.Left = 64
     $BalanceListBox.Top = 60
     $BalanceListBox.Width = 375
@@ -3853,7 +3855,8 @@ function BuildMainForm
     $ProjectedListBox = New-Object System.Windows.Forms.CheckedListBox
     $ProjectedListBox.Name = "ProjectedListBox"
     $ProjectedListBox.CheckOnClick = $True
-    $ProjectedListBox.Height = 277
+    $ProjectedListBox.Height = 155
+    $ProjectedListBox.IntegralHeight = $False
     $ProjectedListBox.Left = 503
     $ProjectedListBox.Top = 60
     $ProjectedListBox.Width = 375
@@ -3933,7 +3936,7 @@ function BuildMainForm
         $ProjectedEditButton.Enabled    = $True
         $ProjectedDeleteButton.Enabled  = $True
     }
-
+    
     $MainForm.Add_FormClosing({MainFormClosing -EventArguments $_})
     $UpdateInfoButton.Add_Click({MainFormUpdateInfoButtonClick})
     $LengthOfServiceTextBox.Add_Click({MainFormLengthOfServiceTextBoxClick})
@@ -4669,14 +4672,14 @@ function BuildOutputForm
     $OutputForm.Font            = $Script:FormFont
     $OutputForm.FormBorderStyle = "FixedSingle"
     $OutputForm.MaximizeBox     = $False
-    $OutputForm.Size            = New-Object System.Drawing.Size(460, 643)
+    $OutputForm.Size            = New-Object System.Drawing.Size(460, 503)
     $OutputForm.Text            = "Projection Report"
     $OutputForm.WindowState     = "Normal"
 
     $OutputRichTextBox = New-Object System.Windows.Forms.RichTextBox
     $OutputRichTextBox.Name = "OutputRichTextBox"
     $OutputRichTextBox.Dock = "Top"
-    $OutputRichTextBox.Height = 540
+    $OutputRichTextBox.Height = 400
     $OutputRichTextBox.Multiline = $True
     $OutputRichTextBox.ReadOnly = $True
     $OutputRichTextBox.TabStop = $False
@@ -4686,7 +4689,7 @@ function BuildOutputForm
     $CopyButton.Height = 24
     $CopyButton.Left = 54
     $CopyButton.Text = "Copy"
-    $CopyButton.Top = 544
+    $CopyButton.Top = 404
     $CopyButton.Width = 336
     
     $CloseButton = New-Object System.Windows.Forms.Button
@@ -4694,7 +4697,7 @@ function BuildOutputForm
     $CloseButton.Height = 24
     $CloseButton.Left = 54
     $CloseButton.Text = "Close"
-    $CloseButton.Top = 577
+    $CloseButton.Top = 437
     $CloseButton.Width = 336
     
     $OutputForm.Controls.AddRange(($OutputRichTextBox, $CopyButton, $CalculateWhenToStartLeaveButton, $CloseButton))
