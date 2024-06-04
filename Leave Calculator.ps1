@@ -6,7 +6,21 @@ Federal Holidays: https://www.opm.gov/policy-data-oversight/pay-leave/federal-ho
 #>
 
 <#
-See about handling "Enter" key press events on all forms.
+Todo: Modify the Append Text function to work with a provided RichTextBox. Then I can use it to append the text in BuildHelpForm function.
+
+Keyboard Shortcuts:
+F1: Help
+F2: Employee Info
+F3: Edit Balance
+F4: Edit Projected
+F5: Run Projection
+
+Esc generally clicks Cancel
+Enter generally clicks OK
+
+When focus is on one of the List Boxes: Enter opens the edit menu, Del deletes the selection, + adds a new one.
+
+Arrow keys can switch radio button selection and adjust most date-time-pickers (exception is projected leave), space changes checkboxes, tab / Shift+Tab to move between controls.
 #>
 
 Add-Type -AssemblyName System.Windows.Forms
@@ -17,6 +31,7 @@ Add-Type -AssemblyName System.Drawing
 
 $Script:FormFont     = New-Object System.Drawing.Font("Times New Roman", 10)
 $Script:IconsFont    = New-Object System.Drawing.Font("Segoe MDL2 Assets", 10, [System.Drawing.FontStyle]::Bold)
+$Script:HelpIconFont = New-Object System.Drawing.Font("Segoe MDL2 Assets", 18, [System.Drawing.FontStyle]::Bold)
 
 $Script:CurrentDate                = (Get-Date).Date
 $Script:LeaveYearBeginningBaseline = (Get-Date -Year 2023 -Month 1 -Day 1).Date #In 2023 the first pay period began on 1 Jan. Use this as a baseline.
@@ -110,7 +125,7 @@ function Main
 {
     $Script:BeginningOfPayPeriod = GetBeginningOfPayPeriodForDate -Date $Script:CurrentDate
     $Script:LastSelectableDate   = GetLeaveYearEndForDate -Date ((Get-Date -Year ($Script:BeginningOfPayPeriod.Year + 2) -Month $Script:BeginningOfPayPeriod.Month -Day $Script:BeginningOfPayPeriod.Day)).Date
-    GetOpmHolidaysForYears
+    #GetOpmHolidaysForYears #Todo uncomment this.
     LoadConfig
     SetWorkHoursPerPayPeriod
     GetAccrualRateDateChange
@@ -312,9 +327,9 @@ function GetOpmHolidaysForYears
                 $YearEndingIndex = $HolidayContent.IndexOf("<p class=`"top`"><a href=`"#content`">Back to top</a></p>", $YearBeginningIndex)
 
                 if($YearEndingIndex -eq -1)
-                        {
-                $YearEndingIndex = $HolidayContent.LastIndexOf("</p>") + 4 #The + 4 is so we get the "</p>" so every holiday content we get should be identical for further processing.
-            }
+                {
+                    $YearEndingIndex = $HolidayContent.LastIndexOf("</p>") + 4 #The + 4 is so we get the "</p>" so every holiday content we get should be identical for further processing.
+                }
 
                 $YearContent = $HolidayContent.Substring($YearBeginningIndex, ($YearEndingIndex - $YearBeginningIndex))
             }
@@ -723,7 +738,7 @@ function LoadConfig
                             #Digits                                          0-9
                             #Also a space                                       <space>
                         
-                        if([System.Windows.Forms.TextRenderer]::MeasureText($LoadedConfig[$Index].Name.Trim(), $Script:FormFont).Width -le 100 -and
+                        if([System.Windows.Forms.TextRenderer]::MeasureText($LoadedConfig[$Index].Name.Trim(), $Script:FormFont).Width -le 85 -and
                            $LoadedConfig[$Index].Name.Trim() -match "[^A-Za-z0-9 ]" -eq $False -and
                            $LoadedConfig[$Index].Name.ToLower().Trim() -ne "annual" -and
                            $LoadedConfig[$Index].Name.ToLower().Trim() -ne "sick" -and
@@ -1668,6 +1683,8 @@ function PopulateProjectedLeaveDays
         $Script:EditProjectedLeaveForm.Controls["LeaveDatesFlowLayoutPanel"].Controls.Add($NewPanel)
 
         $NewNumericUpDown.Add_TextChanged({HourNumericUpDownChanged})
+        $NewNumericUpDown.Add_MouseClick({NumericUpDownMouseClick -Sender $NewNumericUpDown -EventArguments $_}.GetNewClosure())
+        $NewNumericUpDown.Add_Enter({NumericUpDownEnter -Sender $NewNumericUpDown -EventArguments $_}.GetNewClosure())
         
         $Date = $Date.AddDays(1)
     }
@@ -2113,6 +2130,45 @@ function MainFormClosing
     }
 }
 
+function MainFormKeyDown
+{
+    [CmdletBinding()]
+    param
+    (
+        [parameter(Mandatory=$True)][System.EventArgs] $EventArguments
+    )
+    
+    if($EventArguments.KeyCode -eq "F1")
+    {
+        MainFormHelpButtonClick
+    }
+
+    elseif($EventArguments.KeyCode -eq "F2")
+    {
+        MainFormUpdateInfoButtonClick
+    }
+
+    elseif($EventArguments.KeyCode -eq "F3")
+    {
+        $MainForm.ActiveControl = $Script:MainForm.Controls["LeavePanel"].Controls["BalanceListBox"]
+        
+        MainFormBalanceEditButtonClick
+    }
+
+    elseif($EventArguments.KeyCode -eq "F4" -and
+           $Script:ProjectedLeave.Count -gt 0)
+    {
+        $MainForm.ActiveControl = $Script:MainForm.Controls["LeavePanel"].Controls["ProjectedListBox"]
+        
+        MainFormProjectedEditButtonClick
+    }
+
+    elseif($EventArguments.KeyCode -eq "F5")
+    {
+        MainFormProjectButtonClick
+    }
+}
+
 function MainFormSCDLeaveDateTimePickerValueChanged
 {
     $Script:SCDLeaveDate = $Script:MainForm.Controls["SettingsPanel"].Controls["SCDLeaveDateDateTimePicker"].Value.Date
@@ -2211,6 +2267,37 @@ function MainFormLeaveBalanceListBoxDoubleClick
     if($DoubleClickedIndex -ne -1)
     {
         MainFormBalanceEditButtonClick
+    }
+}
+
+function MainFormBalanceListBoxKeyDown
+{
+    [CmdletBinding()]
+    param
+    (
+        [parameter(Mandatory=$True)][System.EventArgs] $EventArguments
+    )
+
+    if($EventArguments.KeyCode -eq "Return")
+    {
+        MainFormBalanceEditButtonClick
+    }
+
+    elseif($EventArguments.KeyCode -eq "Add" -or
+           $EventArguments.KeyCode -eq "Oemplus")
+    {
+        MainFormBalanceAddButtonClick
+    }
+
+    elseif($EventArguments.KeyCode -eq "Delete")
+    {
+        $SelectedLeaveBalance = $Script:LeaveBalances[$Script:MainForm.Controls["LeavePanel"].Controls["BalanceListBox"].SelectedIndex]
+        
+        if($SelectedLeaveBalance.Name.ToLower() -ne "annual" -and
+           $SelectedLeaveBalance.Name.ToLower() -ne "sick")
+        {
+            MainFormBalanceDeleteButtonClick
+        }
     }
 }
 
@@ -2378,7 +2465,8 @@ function MainFormProjectedLeaveListBoxClick
         $CheckedListBox.SetItemChecked($ClickedIndex, -not $CheckedListBox.GetItemChecked($ClickedIndex))
     }
 
-    if($ClickedIndex -eq -1)
+    if($ClickedIndex -eq -1 -and
+       $Script:ProjectedLeave.Count -gt 0)
     {
         $SelectedIndex = $Script:MainForm.Controls["LeavePanel"].Controls["ProjectedListBox"].SelectedIndex
         
@@ -2410,6 +2498,34 @@ function MainFormProjectedLeaveListBoxDoubleClick
         $SelectedIndex = $Script:MainForm.Controls["LeavePanel"].Controls["ProjectedListBox"].SelectedIndex
         
         $CheckedListBox.SetItemChecked($SelectedIndex, -not $CheckedListBox.GetItemChecked($SelectedIndex))
+    }
+}
+
+function MainFormProjectedListBoxKeyDown
+{
+    [CmdletBinding()]
+    param
+    (
+        [parameter(Mandatory=$True)][System.EventArgs] $EventArguments
+    )
+
+    if($EventArguments.KeyCode -eq "Add" -or
+       $EventArguments.KeyCode -eq "Oemplus")
+    {
+        MainFormProjectedAddButtonClick
+    }
+
+    elseif($Script:ProjectedLeave.Count -gt 0)
+    {
+        if($EventArguments.KeyCode -eq "Return")
+        {
+            MainFormProjectedEditButtonClick
+        }
+
+        elseif($EventArguments.KeyCode -eq "Delete")
+        {
+            MainFormProjectedDeleteButtonClick
+        }
     }
 }
 
@@ -2520,6 +2636,13 @@ function MainFormEveryPPCheckBoxClicked
 function MainFormDisplayHighsLowsClicked
 {
     $Script:DisplayHighsAndLows = $Script:MainForm.Controls["SettingsPanel"].Controls["DisplayLeaveHighsAndLows"].Checked
+}
+
+function MainFormHelpButtonClick
+{
+    BuildHelpForm
+
+    $Script:HelpForm.ShowDialog()
 }
 
 #endregion Main Form
@@ -2657,6 +2780,25 @@ function EmployeeInfoFormClosing
     if($ChangesMade -eq $True -and $Response -eq "No")
     {
         $EventArguments.Cancel = $True
+    }
+}
+
+function EmployeeInfoFormKeyDown
+{
+    [CmdletBinding()]
+    param
+    (
+        [parameter(Mandatory=$True)][System.EventArgs] $EventArguments
+    )
+
+    if($EventArguments.KeyCode -eq "Return")
+    {
+        EmployeeInfoFormOkButtonClick
+    }
+    
+    elseif($EventArguments.KeyCode -eq "Escape")
+    {
+        EmployeeInfoFormCancelButtonClick
     }
 }
 
@@ -2913,7 +3055,7 @@ function EmployeeInfoHoursChanged
 
 function EditLeaveBalanceFormCheckNameLength
 {
-    if([System.Windows.Forms.TextRenderer]::MeasureText($Script:EditLeaveBalanceForm.Controls["LeaveBalanceNameTextBox"].Text, $Script:FormFont).Width -gt 100) #Check the width of the name string
+    if([System.Windows.Forms.TextRenderer]::MeasureText($Script:EditLeaveBalanceForm.Controls["LeaveBalanceNameTextBox"].Text, $Script:FormFont).Width -gt 85) #Check the width of the name string
     {
         $Text = $Script:EditLeaveBalanceForm.Controls["LeaveBalanceNameTextBox"].Text
 
@@ -2992,6 +3134,26 @@ function EditLeaveBalanceFormClosing
     else
     {
         $EventArguments.Cancel = $True
+    }
+}
+
+function EditLeaveBalanceFormKeyDown
+{
+    [CmdletBinding()]
+    param
+    (
+        [parameter(Mandatory=$True)][System.EventArgs] $EventArguments
+    )
+
+    if($EventArguments.KeyCode -eq "Return" -and
+       $Script:EditLeaveBalanceForm.Controls["EditLeaveOkButton"].Enabled -eq $True)
+    {
+        EditLeaveBalanceFormOkButtonClick
+    }
+    
+    elseif($EventArguments.KeyCode -eq "Escape")
+    {
+        EditLeaveBalanceFormCancelButtonClick
     }
 }
 
@@ -3388,6 +3550,25 @@ function EditProjectedLeaveFormClosing
     }
 }
 
+function EditProjectedLeaveFormKeyDown
+{
+    [CmdletBinding()]
+    param
+    (
+        [parameter(Mandatory=$True)][System.EventArgs] $EventArguments
+    )
+
+    if($EventArguments.KeyCode -eq "Return")
+    {
+        EditProjectedLeaveOkButton
+    }
+    
+    elseif($EventArguments.KeyCode -eq "Escape")
+    {
+        EditProjectedLeaveCancelButton
+    }
+}
+
 function EditProjectedLeaveOkButton
 {
     $SelectedIndex = $Script:MainForm.Controls["LeavePanel"].Controls["ProjectedListBox"].SelectedIndex
@@ -3593,6 +3774,20 @@ function EndDateCalendarClosedUp
 
 #region Output Form
 
+function OutputFormKeyDown
+{
+    [CmdletBinding()]
+    param
+    (
+        [parameter(Mandatory=$True)][System.EventArgs] $EventArguments
+    )
+
+    if($EventArguments.KeyCode -eq "Escape")
+    {
+        OutputFormCloseButton
+    }
+}
+
 function OutputFormCopyButton
 {
     #Do a few simple RegEx replacements to replace all tab characters with a space and then replace any consecutive spaces with only a single space.
@@ -3606,6 +3801,53 @@ function OutputFormCloseButton
 
 #endregion Output Form
 
+#region Help Form
+
+function HelpFormKeyDown
+{
+    [CmdletBinding()]
+    param
+    (
+        [parameter(Mandatory=$True)][System.EventArgs] $EventArguments
+    )
+
+    if($EventArguments.KeyCode -eq "Escape")
+    {
+        HelpFormCloseButton
+    }
+}
+
+function HelpFormCloseButton
+{
+    $Script:HelpForm.Close()
+}
+
+#endregion Help Form
+
+function Global:NumericUpDownMouseClick
+{
+    [CmdletBinding()]
+    param
+    (
+        [parameter(Mandatory=$True)] $Sender,
+        [parameter(Mandatory=$True)] $EventArguments
+    )
+
+    $Sender.Select(0, $Sender.Text.Length)
+}
+
+function Global:NumericUpDownEnter
+{
+    [CmdletBinding()]
+    param
+    (
+        [parameter(Mandatory=$True)] $Sender,
+        [parameter(Mandatory=$True)] $EventArguments
+    )
+
+    $Sender.Select(0, $Sender.Text.Length)
+}
+
 #endregion Event Handlers
 
 #region Form Building Functions
@@ -3617,8 +3859,10 @@ function BuildMainForm
     $MainForm.BackColor       = "WhiteSmoke"
     $MainForm.Font            = $Script:FormFont
     $MainForm.FormBorderStyle = "FixedSingle"
+    $MainForm.KeyPreview      = $True
     $MainForm.MaximizeBox     = $False
     $MainForm.Size            = New-Object System.Drawing.Size(957, 438)
+    $MainForm.StartPosition   = "CenterScreen"
     $MainForm.Text            = "Federal Civilian Leave Calculator"
     $MainForm.WindowState     = "Normal"
     
@@ -3749,7 +3993,7 @@ function BuildMainForm
     $ProjectToEndOfPayPeriodLabel = New-Object System.Windows.Forms.Label
     $ProjectToEndOfPayPeriodLabel.Name = "ProjectToEndOfPayPeriodLabel"
     $ProjectToEndOfPayPeriodLabel.AutoSize = $True
-    $ProjectToEndOfPayPeriodLabel.Left = 521
+    $ProjectToEndOfPayPeriodLabel.Left = 501
     $ProjectToEndOfPayPeriodLabel.Top = 10
 
     $ProjectButton = New-Object System.Windows.Forms.Button
@@ -3757,7 +4001,17 @@ function BuildMainForm
     $ProjectButton.Left = 450
     $ProjectButton.Text = "Run Projection"
     $ProjectButton.Top = 40
-    $ProjectButton.Width = 442
+    $ProjectButton.Width = 400
+    
+    $HelpButton = New-Object System.Windows.Forms.Button
+    $HelpButton.Name = "HelpButton"
+    $HelpButton.Font = $Script:HelpIconFont
+    $HelpButton.ForeColor = "Blue"
+    $HelpButton.Height = 45
+    $HelpButton.Left = 880
+    $HelpButton.Text = [char]0xE9CE #? in Circle Symbol
+    $HelpButton.Top = 13
+    $HelpButton.Width = 45
     
     $LeavePanel = New-Object System.Windows.Forms.Panel
     $LeavePanel.Name = "LeavePanel"
@@ -3863,7 +4117,7 @@ function BuildMainForm
 
     $MainForm.Controls.AddRange(($LeavePanel, $SettingsPanel, $ReportPanel))
     $SettingsPanel.Controls.AddRange(($SCDLeaveDateLabel, $SCDLeaveDateDateTimePicker, $UpdateInfoButton, $LengthOfServiceTextBox, $EmployeeTypeTextBox, $DisplayBalanceEveryLeaveCheckBox, $DisplayBalanceEveryPayPeriodEnd, $DisplayLeaveHighsAndLows))
-    $ReportPanel.Controls.AddRange(($ProjectBalanceRadioButton, $ReachGoalRadioButton, $ProjectToDateDateTimePicker, $AnnualGoalLabel, $AnnualGoalNumericUpDown, $SickGoalLabel, $SickGoalNumericUpDown, $ProjectToEndOfPayPeriodLabel, $ProjectButton))
+    $ReportPanel.Controls.AddRange(($ProjectBalanceRadioButton, $ReachGoalRadioButton, $ProjectToDateDateTimePicker, $AnnualGoalLabel, $AnnualGoalNumericUpDown, $SickGoalLabel, $SickGoalNumericUpDown, $ProjectToEndOfPayPeriodLabel, $ProjectButton, $HelpButton))
     $LeavePanel.Controls.AddRange(($DataAsOfDateLabel, $LeaveBalancesLabel, $ProjectedLeaveLabel, $BalanceListBox, $BalanceAddButton, $BalanceEditButton, $BalanceDeleteButton, $ProjectedListBox, $ProjectedAddButton, $ProjectedEditButton, $ProjectedDeleteButton))
     
     #Select/Check the appropriate things.
@@ -3938,11 +4192,13 @@ function BuildMainForm
     }
     
     $MainForm.Add_FormClosing({MainFormClosing -EventArguments $_})
+    $MainForm.Add_KeyDown({MainFormKeyDown -EventArguments $_})
     $UpdateInfoButton.Add_Click({MainFormUpdateInfoButtonClick})
     $LengthOfServiceTextBox.Add_Click({MainFormLengthOfServiceTextBoxClick})
     $ProjectBalanceRadioButton.Add_Click({MainFormProjectBalanceRadioButtonClick})
     $ReachGoalRadioButton.Add_Click({MainFormReachGoalRadioButtonClick})
     $ProjectButton.Add_Click({MainFormProjectButtonClick})
+    $HelpButton.Add_Click({MainFormHelpButtonClick})
     $BalanceAddButton.Add_Click({MainFormBalanceAddButtonClick})
     $BalanceEditButton.Add_Click({MainFormBalanceEditButtonClick})
     $BalanceDeleteButton.Add_Click({MainFormBalanceDeleteButtonClick})
@@ -3952,15 +4208,21 @@ function BuildMainForm
     $SCDLeaveDateDateTimePicker.Add_ValueChanged({MainFormSCDLeaveDateTimePickerValueChanged})
     $BalanceListBox.Add_SelectedIndexChanged({MainFormLeaveBalanceListBoxIndexChanged})
     $BalanceListBox.Add_DoubleClick({MainFormLeaveBalanceListBoxDoubleClick -EventArguments $_})
+    $BalanceListBox.Add_KeyDown({MainFormBalanceListBoxKeyDown -EventArguments $_})
     $ProjectedListBox.Add_Click({MainFormProjectedLeaveListBoxClick -EventArguments $_})
     $ProjectedListBox.Add_DoubleClick({MainFormProjectedLeaveListBoxDoubleClick -EventArguments $_})
     $ProjectedListBox.Add_ItemCheck({MainFormProjectedLeaveListBoxItemCheck -EventArguments $_})
+    $ProjectedListBox.Add_KeyDown({MainFormProjectedListBoxKeyDown -EventArguments $_})
     $ProjectToDateDateTimePicker.Add_ValueChanged({MainFormProjectToDateValueChanged})
     $AnnualGoalNumericUpDown.Add_ValueChanged({MainFormAnnualGoalValueChanged})
     $SickGoalNumericUpDown.Add_ValueChanged({MainFormSickGoalValueChanged})
     $DisplayBalanceEveryLeaveCheckBox.Add_Click({MainFormEveryLeaveCheckBoxClicked})
     $DisplayBalanceEveryPayPeriodEnd.Add_Click({MainFormEveryPPCheckBoxClicked})
     $DisplayLeaveHighsAndLows.Add_Click({MainFormDisplayHighsLowsClicked})
+    $AnnualGoalNumericUpDown.Add_MouseClick({NumericUpDownMouseClick -Sender $AnnualGoalNumericUpDown -EventArguments $_}.GetNewClosure())
+    $AnnualGoalNumericUpDown.Add_Enter({NumericUpDownEnter -Sender $AnnualGoalNumericUpDown -EventArguments $_}.GetNewClosure())
+    $SickGoalNumericUpDown.Add_MouseClick({NumericUpDownMouseClick -Sender $SickGoalNumericUpDown -EventArguments $_}.GetNewClosure())
+    $SickGoalNumericUpDown.Add_Enter({NumericUpDownEnter -Sender $SickGoalNumericUpDown -EventArguments $_}.GetNewClosure())
     
     #This is done after the events because I do want the event to fire.
     $BalanceListBox.SelectedIndex = 0
@@ -3973,8 +4235,10 @@ function BuildEmployeeInfoForm
     $EmployeeInfoForm.BackColor       = "WhiteSmoke"
     $EmployeeInfoForm.Font            = $Script:FormFont
     $EmployeeInfoForm.FormBorderStyle = "FixedSingle"
+    $EmployeeInfoForm.KeyPreview      = $True
     $EmployeeInfoForm.MaximizeBox     = $False
     $EmployeeInfoForm.Size            = New-Object System.Drawing.Size(305, 471)
+    $EmployeeInfoForm.StartPosition   = "CenterParent"
     $EmployeeInfoForm.Text            = "Employee Information"
     $EmployeeInfoForm.WindowState     = "Normal"
 
@@ -4294,6 +4558,7 @@ function BuildEmployeeInfoForm
     $Day14NumericUpDown.Value = $Script:WorkSchedule["PayPeriodDay14"]
     
     $EmployeeInfoForm.Add_FormClosing({EmployeeInfoFormClosing -EventArguments $_})
+    $EmployeeInfoForm.Add_KeyDown({EmployeeInfoFormKeyDown -EventArguments $_})
     $EmployeeInfoOkButton.Add_Click({EmployeeInfoFormOkButtonClick})
     $EmployeeInfoCancelButton.Add_Click({EmployeeInfoFormCancelButtonClick})
     $FullTimeRadioButton.Add_Click({EmployeeInfoFormFullTimeRadioButtonClick; EmployeeInfoHoursChanged})
@@ -4314,6 +4579,35 @@ function BuildEmployeeInfoForm
     $Day12NumericUpDown.Add_TextChanged({EmployeeInfoHoursChanged})
     $Day13NumericUpDown.Add_TextChanged({EmployeeInfoHoursChanged})
     $Day14NumericUpDown.Add_TextChanged({EmployeeInfoHoursChanged})
+
+    $Day1NumericUpDown.Add_MouseClick({NumericUpDownMouseClick -Sender $Day1NumericUpDown -EventArguments $_}.GetNewClosure())
+    $Day1NumericUpDown.Add_Enter({NumericUpDownEnter -Sender $Day1NumericUpDown -EventArguments $_}.GetNewClosure())
+    $Day2NumericUpDown.Add_MouseClick({NumericUpDownMouseClick -Sender $Day2NumericUpDown -EventArguments $_}.GetNewClosure())
+    $Day2NumericUpDown.Add_Enter({NumericUpDownEnter -Sender $Day2NumericUpDown -EventArguments $_}.GetNewClosure())
+    $Day3NumericUpDown.Add_MouseClick({NumericUpDownMouseClick -Sender $Day3NumericUpDown -EventArguments $_}.GetNewClosure())
+    $Day3NumericUpDown.Add_Enter({NumericUpDownEnter -Sender $Day3NumericUpDown -EventArguments $_}.GetNewClosure())
+    $Day4NumericUpDown.Add_MouseClick({NumericUpDownMouseClick -Sender $Day4NumericUpDown -EventArguments $_}.GetNewClosure())
+    $Day4NumericUpDown.Add_Enter({NumericUpDownEnter -Sender $Day4NumericUpDown -EventArguments $_}.GetNewClosure())
+    $Day5NumericUpDown.Add_MouseClick({NumericUpDownMouseClick -Sender $Day5NumericUpDown -EventArguments $_}.GetNewClosure())
+    $Day5NumericUpDown.Add_Enter({NumericUpDownEnter -Sender $Day5NumericUpDown -EventArguments $_}.GetNewClosure())
+    $Day6NumericUpDown.Add_MouseClick({NumericUpDownMouseClick -Sender $Day6NumericUpDown -EventArguments $_}.GetNewClosure())
+    $Day6NumericUpDown.Add_Enter({NumericUpDownEnter -Sender $Day6NumericUpDown -EventArguments $_}.GetNewClosure())
+    $Day7NumericUpDown.Add_MouseClick({NumericUpDownMouseClick -Sender $Day7NumericUpDown -EventArguments $_}.GetNewClosure())
+    $Day7NumericUpDown.Add_Enter({NumericUpDownEnter -Sender $Day7NumericUpDown -EventArguments $_}.GetNewClosure())
+    $Day8NumericUpDown.Add_MouseClick({NumericUpDownMouseClick -Sender $Day8NumericUpDown -EventArguments $_}.GetNewClosure())
+    $Day8NumericUpDown.Add_Enter({NumericUpDownEnter -Sender $Day8NumericUpDown -EventArguments $_}.GetNewClosure())
+    $Day9NumericUpDown.Add_MouseClick({NumericUpDownMouseClick -Sender $Day9NumericUpDown -EventArguments $_}.GetNewClosure())
+    $Day9NumericUpDown.Add_Enter({NumericUpDownEnter -Sender $Day9NumericUpDown -EventArguments $_}.GetNewClosure())
+    $Day10NumericUpDown.Add_MouseClick({NumericUpDownMouseClick -Sender $Day10NumericUpDown -EventArguments $_}.GetNewClosure())
+    $Day10NumericUpDown.Add_Enter({NumericUpDownEnter -Sender $Day10NumericUpDown -EventArguments $_}.GetNewClosure())
+    $Day11NumericUpDown.Add_MouseClick({NumericUpDownMouseClick -Sender $Day11NumericUpDown -EventArguments $_}.GetNewClosure())
+    $Day11NumericUpDown.Add_Enter({NumericUpDownEnter -Sender $Day11NumericUpDown -EventArguments $_}.GetNewClosure())
+    $Day12NumericUpDown.Add_MouseClick({NumericUpDownMouseClick -Sender $Day12NumericUpDown -EventArguments $_}.GetNewClosure())
+    $Day12NumericUpDown.Add_Enter({NumericUpDownEnter -Sender $Day12NumericUpDown -EventArguments $_}.GetNewClosure())
+    $Day13NumericUpDown.Add_MouseClick({NumericUpDownMouseClick -Sender $Day13NumericUpDown -EventArguments $_}.GetNewClosure())
+    $Day13NumericUpDown.Add_Enter({NumericUpDownEnter -Sender $Day13NumericUpDown -EventArguments $_}.GetNewClosure())
+    $Day14NumericUpDown.Add_MouseClick({NumericUpDownMouseClick -Sender $Day14NumericUpDown -EventArguments $_}.GetNewClosure())
+    $Day14NumericUpDown.Add_Enter({NumericUpDownEnter -Sender $Day14NumericUpDown -EventArguments $_}.GetNewClosure())
 }
 
 function BuildEditLeaveBalanceForm
@@ -4325,8 +4619,10 @@ function BuildEditLeaveBalanceForm
     $EditLeaveBalanceForm.BackColor       = "WhiteSmoke"
     $EditLeaveBalanceForm.Font            = $Script:FormFont
     $EditLeaveBalanceForm.FormBorderStyle = "FixedSingle"
+    $EditLeaveBalanceForm.KeyPreview      = $True
     $EditLeaveBalanceForm.MaximizeBox     = $False
     $EditLeaveBalanceForm.Size            = New-Object System.Drawing.Size(260, 204)
+    $EditLeaveBalanceForm.StartPosition   = "CenterParent"
     $EditLeaveBalanceForm.Text            = "Edit Leave"
     $EditLeaveBalanceForm.WindowState     = "Normal"
 
@@ -4472,18 +4768,24 @@ function BuildEditLeaveBalanceForm
     {
         $LeaveBalanceNameTextBox.TabStop = $False
     }
-
-    if($LeaveBalanceNameTextBox.Text -ne "")
-    {
-        $EditLeaveBalanceForm.ActiveControl = $BalanceNumericUpDown
-    }
     
     $EditLeaveBalanceForm.Add_FormClosing({EditLeaveBalanceFormClosing -EventArguments $_})
+    $EditLeaveBalanceForm.Add_KeyDown({EditLeaveBalanceFormKeyDown -EventArguments $_})
     $LeaveBalanceNameTextBox.Add_TextChanged({EditLeaveBalanceFormCheckNameLength; EditLeaveBalanceFormNameOrDateChanged})
     $LeaveExpiresCheckBox.Add_Click({EditLeaveBalanceFormLeaveExpiresCheckBoxClick; EditLeaveBalanceFormNameOrDateChanged})
     $LeaveExpiresOnDateTimePicker.Add_Valuechanged({EditLeaveBalanceFormNameOrDateChanged})
     $EditLeaveOkButton.Add_Click({EditLeaveBalanceFormOkButtonClick})
     $EditLeaveCancelButton.Add_Click({EditLeaveBalanceFormCancelButtonClick})
+    $BalanceNumericUpDown.Add_MouseClick({NumericUpDownMouseClick -Sender $BalanceNumericUpDown -EventArguments $_}.GetNewClosure())
+    $BalanceNumericUpDown.Add_Enter({NumericUpDownEnter -Sender $BalanceNumericUpDown -EventArguments $_}.GetNewClosure())
+    $ThresholdNumericUpDown.Add_MouseClick({NumericUpDownMouseClick -Sender $ThresholdNumericUpDown -EventArguments $_}.GetNewClosure())
+    $ThresholdNumericUpDown.Add_Enter({NumericUpDownEnter -Sender $ThresholdNumericUpDown -EventArguments $_}.GetNewClosure())
+
+    #This happens after the events so it'll fire.
+    if($LeaveBalanceNameTextBox.Text -ne "")
+    {
+        $EditLeaveBalanceForm.ActiveControl = $BalanceNumericUpDown
+    }
 }
 
 function BuildEditProjectedLeaveForm
@@ -4496,8 +4798,10 @@ function BuildEditProjectedLeaveForm
     $EditProjectedLeaveForm.BackColor       = "WhiteSmoke"
     $EditProjectedLeaveForm.Font            = $Script:FormFont
     $EditProjectedLeaveForm.FormBorderStyle = "FixedSingle"
+    $EditProjectedLeaveForm.KeyPreview      = $True
     $EditProjectedLeaveForm.MaximizeBox     = $False
     $EditProjectedLeaveForm.Size            = New-Object System.Drawing.Size(475, 400)
+    $EditProjectedLeaveForm.StartPosition   = "CenterParent"
     $EditProjectedLeaveForm.Text            = "Edit Projected Leave"
     $EditProjectedLeaveForm.WindowState     = "Normal"
 
@@ -4657,6 +4961,7 @@ function BuildEditProjectedLeaveForm
     $LeaveStartDateTimePicker.Add_CloseUp({StartDateCalendarClosedUp})
     $LeaveEndDateTimePicker.Add_CloseUp({EndDateCalendarClosedUp})
     $EditProjectedLeaveForm.Add_FormClosing({EditProjectedLeaveFormClosing -EventArguments $_})
+    $EditProjectedLeaveForm.Add_KeyDown({EditProjectedLeaveFormKeyDown -EventArguments $_})
     $EditProjectedOkButton.Add_Click({EditProjectedLeaveOkButton})
     $EditProjectedCancelButton.Add_Click({EditProjectedLeaveCancelButton})
     $LeaveBankComboBox.Add_SelectedIndexChanged({EditProjectedLeaveBankSelectedIndexChanged})
@@ -4671,8 +4976,10 @@ function BuildOutputForm
     $OutputForm.BackColor       = "WhiteSmoke"
     $OutputForm.Font            = $Script:FormFont
     $OutputForm.FormBorderStyle = "FixedSingle"
+    $OutputForm.KeyPreview      = $True
     $OutputForm.MaximizeBox     = $False
     $OutputForm.Size            = New-Object System.Drawing.Size(460, 503)
+    $OutputForm.StartPosition   = "CenterParent"
     $OutputForm.Text            = "Projection Report"
     $OutputForm.WindowState     = "Normal"
 
@@ -4700,14 +5007,51 @@ function BuildOutputForm
     $CloseButton.Top = 437
     $CloseButton.Width = 336
     
-    $OutputForm.Controls.AddRange(($OutputRichTextBox, $CopyButton, $CalculateWhenToStartLeaveButton, $CloseButton))
+    $OutputForm.Controls.AddRange(($OutputRichTextBox, $CopyButton, $CloseButton))
     
     $OutputForm.ActiveControl = $CloseButton
     
     PopulateOutputFormRichTextBox
 
+    $OutputForm.Add_KeyDown({OutputFormKeyDown -EventArguments $_})
     $CopyButton.Add_Click({OutputFormCopyButton})
     $CloseButton.Add_Click({OutputFormCloseButton})
+}
+
+function BuildHelpForm
+{
+    $Script:HelpForm          = New-Object System.Windows.Forms.Form
+    $HelpForm.Name            = "HelpForm"
+    $HelpForm.BackColor       = "WhiteSmoke"
+    $HelpForm.Font            = $Script:FormFont
+    $HelpForm.FormBorderStyle = "FixedSingle"
+    $HelpForm.KeyPreview      = $True
+    $HelpForm.MaximizeBox     = $False
+    $HelpForm.Size            = New-Object System.Drawing.Size(460, 503)
+    $HelpForm.StartPosition   = "CenterParent"
+    $HelpForm.Text            = "Help"
+    $HelpForm.WindowState     = "Normal"
+
+    $OutputRichTextBox = New-Object System.Windows.Forms.RichTextBox
+    $OutputRichTextBox.Name = "OutputRichTextBox"
+    $OutputRichTextBox.Dock = "Top"
+    $OutputRichTextBox.Height = 430
+    $OutputRichTextBox.Multiline = $True
+    $OutputRichTextBox.ReadOnly = $True
+    $OutputRichTextBox.TabStop = $False
+    
+    $CloseButton = New-Object System.Windows.Forms.Button
+    $CloseButton.Name = "CloseButton"
+    $CloseButton.Height = 24
+    $CloseButton.Left = 54
+    $CloseButton.Text = "Close"
+    $CloseButton.Top = 437
+    $CloseButton.Width = 336
+    
+    $HelpForm.Controls.AddRange(($OutputRichTextBox, $CloseButton))
+    
+    $HelpForm.Add_KeyDown({HelpFormKeyDown -EventArguments $_})
+    $CloseButton.Add_Click({HelpFormCloseButton})
 }
 
 function ShowMessageBox
