@@ -3,24 +3,17 @@ Annual Leave Fact Sheet: https://www.opm.gov/policy-data-oversight/pay-leave/lea
 Sick Leave Fact Sheet: https://www.opm.gov/policy-data-oversight/pay-leave/leave-administration/fact-sheets/sick-leave-general-information/
 Leave Year Beginning/Ending Dates: https://www.opm.gov/policy-data-oversight/pay-leave/leave-administration/fact-sheets/leave-year-beginning-and-ending-dates/
 Federal Holidays: https://www.opm.gov/policy-data-oversight/pay-leave/federal-holidays/
+Holiday Clarification on Who Gets the Inauguration Holiday: https://www.opm.gov/policy-data-oversight/pay-leave/pay-administration/fact-sheets/holidays-work-schedules-and-pay/
 #>
 
 <#
-Todo: Modify the Append Text function to work with a provided RichTextBox. Then I can use it to append the text in BuildHelpForm function.
+Todo When switching to Reach Goal mode, hide the label showing the "Will Project Through..."
 
-Keyboard Shortcuts:
-F1: Help
-F2: Employee Info
-F3: Edit Balance
-F4: Edit Projected
-F5: Run Projection
-
-Esc generally clicks Cancel
-Enter generally clicks OK
-
-When focus is on one of the List Boxes: Enter opens the edit menu, Del deletes the selection, + adds a new one.
-
-Arrow keys can switch radio button selection and adjust most date-time-pickers (exception is projected leave), space changes checkboxes, tab / Shift+Tab to move between controls.
+Maybe Todo: Instead of manually doing the MM/dd/yyyy format for all the strings and the DateTimePickers, I should get the format the user has set on their computer with:
+([System.Globalization.CultureInfo]::CurrentCulture.DateTimeFormat).ShortDatePattern
+And then use that in all the ToString("MM/dd/yyyy") areas.
+Also for the DateTimePickers, I should set the format to "Custom" and then the CustomFormat to that string as well. Uniformity! Then double check
+label location in all the forms to make sure that it centers them correctly no matter the length, so probably need to do a runtime calculation of the Left property.
 #>
 
 Add-Type -AssemblyName System.Windows.Forms
@@ -918,19 +911,18 @@ function NumberGetsLetterS($String, $Number)
     return $String
 }
 
-function OutputFormAppendText
+function RichTextBoxAppendText
 {
     [CmdletBinding()]
     param
     (
+        [parameter(Mandatory=$True)]  $RichTextBox,
         [parameter(Mandatory=$True)]  $Text,
         [parameter(Mandatory=$False)] $Alignment,
         [parameter(Mandatory=$False)] $Color,
         [parameter(Mandatory=$False)] $FontSize,
         [parameter(Mandatory=$False)] $FontStyle
     )
-
-    $RichTextBox = $Script:OutputForm.Controls["OutputRichTextBox"]
 
     $RichTextBox.SelectionStart  = $RichTextBox.TextLength
     $RichTextBox.SelectionLength = 0
@@ -1013,6 +1005,8 @@ function PopulateLeaveBalanceListBox
 
 function PopulateOutputFormRichTextBox
 {
+    $RichTextBox = $Script:OutputForm.Controls["OutputRichTextBox"]
+    
     $LeaveBalancesCopy   = New-Object System.Collections.Generic.List[PSCustomObject]
     $LeaveExpiresOnList  = New-Object System.Collections.Generic.List[PSCustomObject]
     $ProjectedLeaveIndex = 0
@@ -1069,14 +1063,14 @@ function PopulateOutputFormRichTextBox
     $TitleString += ":`n"
 
     #Add the title.
-    OutputFormAppendText -Text $TitleString -Alignment "Center" -FontSize ($Script:OutputForm.Controls["OutputRichTextBox"].Font.Size + 2) -FontStyle "Bold"
+    RichTextBoxAppendText -RichTextBox $RichTextBox -Text $TitleString -Alignment "Center" -FontSize ($Script:OutputForm.Controls["OutputRichTextBox"].Font.Size + 2) -FontStyle "Bold"
 
     #Add the section header
-    OutputFormAppendText -Text "`nStarting Balances:`n" -FontStyle "Bold"
+    RichTextBoxAppendText -RichTextBox $RichTextBox -Text "`nStarting Balances:`n" -FontStyle "Bold"
 
     #Add Annual/Sick
-    OutputFormAppendText -Text ($LeaveBalancesCopy[0].Name + ":`t`t" + $LeaveBalancesCopy[0].Balance)
-    OutputFormAppendText -Text ("`n" + $LeaveBalancesCopy[1].Name + ":`t`t" + $LeaveBalancesCopy[1].Balance)
+    RichTextBoxAppendText -RichTextBox $RichTextBox -Text ($LeaveBalancesCopy[0].Name + ":`t`t" + $LeaveBalancesCopy[0].Balance)
+    RichTextBoxAppendText -RichTextBox $RichTextBox -Text ("`n" + $LeaveBalancesCopy[1].Name + ":`t`t" + $LeaveBalancesCopy[1].Balance)
 
     #If projecting to date, append the rest of the balances and their expiration if they expire.
     if($Script:ProjectOrGoal -eq "Project")
@@ -1097,14 +1091,14 @@ function PopulateOutputFormRichTextBox
                 $String += "`tExpires: " + $LeaveBalancesCopy[$Index].ExpiresOn.ToString("MM/dd/yyyy")
             }
 
-            OutputFormAppendText -Text $String
+            RichTextBoxAppendText -RichTextBox $RichTextBox -Text $String
         }
     }
 
     #Add in projected leave included in the report.
     if($Script:MainForm.Controls["LeavePanel"].Controls["ProjectedListBox"].CheckedItems.Count -gt 0)
     {
-        OutputFormAppendText -Text "`n`nProjected Leave Included in Report:"
+        RichTextBoxAppendText -RichTextBox $RichTextBox -Text "`n`nProjected Leave Included in Report:"
 
         foreach($LeaveItem in $Script:MainForm.Controls["LeavePanel"].Controls["ProjectedListBox"].CheckedItems)
         {
@@ -1114,7 +1108,7 @@ function PopulateOutputFormRichTextBox
                $LeaveBankName -eq "sick" -or
                $Script:ProjectOrGoal -eq "Project")
             {
-                OutputFormAppendText -Text ("`n" + $LeaveItem)
+                RichTextBoxAppendText -RichTextBox $RichTextBox -Text ("`n" + $LeaveItem)
             }
         }
     }
@@ -1137,7 +1131,7 @@ function PopulateOutputFormRichTextBox
             {
                 $String = "`n`nAnnual Leave Accrual Rate Changed to the Greater Than 15 Years Category on " + $Script:FifteenYearMark.ToString("MM/dd/yyyy") + "."
                 
-                OutputFormAppendText -Text $String -Color "Green"
+                RichTextBoxAppendText -RichTextBox $RichTextBox -Text $String -Color "Green"
             }
 
             elseif($EndOfPayPeriod.AddDays(-14) -lt $Script:ThreeYearMark -and
@@ -1145,7 +1139,7 @@ function PopulateOutputFormRichTextBox
             {
                 $String = "`n`nAnnual Leave Accrual Rate Changed to the 3 to 15 Years Category on " + $Script:ThreeYearMark.ToString("MM/dd/yyyy") + "."
                 
-                OutputFormAppendText -Text $String -Color "Green"
+                RichTextBoxAppendText -RichTextBox $RichTextBox -Text $String -Color "Green"
             }
         }
         
@@ -1256,7 +1250,7 @@ function PopulateOutputFormRichTextBox
                                     $String  = "`n`n" + $Script:ProjectedLeave[$ProjectedIndex].HoursHashTable[$Date.ToString("MM/dd/yyyy")] + " Hours of $LeaveName Taken on " + $Date.ToString("MM/dd/yyyy") + "."
                                     $String += "`n$LeaveName Balance is now: " + [Math]::Floor($LeaveBalancesCopy[$BalanceIndex].Balance)
 
-                                    OutputFormAppendText -Text $String
+                                    RichTextBoxAppendText -RichTextBox $RichTextBox -Text $String
                                 }
 
                                 if($LeaveBalancesCopy[$BalanceIndex].Name -eq "Annual" -or
@@ -1267,7 +1261,7 @@ function PopulateOutputFormRichTextBox
                                 {
                                     $String = "`n`n" + $LeaveBalancesCopy[$BalanceIndex].Name + " Leave balance is " + $LeaveBalancesCopy[$BalanceIndex].Balance + " which is below the set threshold of " + $LeaveBalancesCopy[$BalanceIndex].Threshold + " after taking leave on " + $Date.ToString("MM/dd/yyyy") + "."
                                 
-                                    OutputFormAppendText -Text $String -Color "Blue"
+                                    RichTextBoxAppendText -RichTextBox $RichTextBox -Text $String -Color "Blue"
                                 }
 
                                 if($LeaveBalancesCopy[$BalanceIndex].Balance -lt 0)
@@ -1281,7 +1275,7 @@ function PopulateOutputFormRichTextBox
                                 
                                     $String = "`n`n$LeaveName balance is negative (" + $LeaveBalancesCopy[$BalanceIndex].Balance + ") after taking leave on " + $Date.ToString("MM/dd/yyyy") + "."
 
-                                    OutputFormAppendText -Text $String -Color "Red"
+                                    RichTextBoxAppendText -RichTextBox $RichTextBox -Text $String -Color "Red"
                                 }
                             }
                         }
@@ -1307,7 +1301,7 @@ function PopulateOutputFormRichTextBox
                             
                             $String = "`n`n" + $LeaveBalancesCopy[$Index].Balance + " hours of $LeaveName will expire on " + $Date.ToString("MM/dd/yyyy") + "."
 
-                            OutputFormAppendText -Text $String -Color "Red"
+                            RichTextBoxAppendText -RichTextBox $RichTextBox -Text $String -Color "Red"
                             
                             $LeaveBalancesCopy.RemoveAt($Index)
                         }
@@ -1335,7 +1329,7 @@ function PopulateOutputFormRichTextBox
                 $String  = "`n`n" + ($LeaveBalancesCopy[0].Balance - $Script:LeaveCeiling) + " hours of Annual Leave will be forfeited on " + $LeaveYearEnd.ToString("MM/dd/yyyy") + " which is the Leave Year End. "
                 $String += "The Leave Year Schedule Deadline for the " + (GetBeginningOfPayPeriodForDate -Date $LeaveYearEnd).Year + " Leave Year is " + (GetLeaveYearScheduleDeadline -Date $LeaveYearEnd).ToString("MM/dd/yyyy") + " in order for the leave to be eligible to be restored in certain circumstances."
                 
-                OutputFormAppendText -Text $String -Color "Red"
+                RichTextBoxAppendText -RichTextBox $RichTextBox -Text $String -Color "Red"
 
                 $LeaveBalancesCopy[0].Balance = $Script:LeaveCeiling
 
@@ -1374,26 +1368,26 @@ function PopulateOutputFormRichTextBox
            $GoalsMet -eq $False)
         {
             #Add descriptive date
-            OutputFormAppendText -Text ("`n`nBalances as of Pay Period Ending " + $EndOfPayPeriod.ToString("MM/dd/yyyy") + ":`n")
+            RichTextBoxAppendText -RichTextBox $RichTextBox -Text ("`n`nBalances as of Pay Period Ending " + $EndOfPayPeriod.ToString("MM/dd/yyyy") + ":`n")
             
             #Add Annual with color
             $AnnualString = $LeaveBalancesCopy[0].Name + ":`t`t" + [Math]::Floor($LeaveBalancesCopy[0].Balance)
 
             if($LeaveBalancesCopy[0].Balance -lt 0)
             {
-                OutputFormAppendText -Text $AnnualString -Color "Red"
+                RichTextBoxAppendText -RichTextBox $RichTextBox -Text $AnnualString -Color "Red"
             }
 
             elseif($LeaveBalancesCopy[0].Balance -gt $Script:LeaveCeiling)
             {
                 $AnnualString += "`tBalance is greater than your Annual Leave ceiling."
         
-                OutputFormAppendText -Text $AnnualString -Color "Blue"
+                RichTextBoxAppendText -RichTextBox $RichTextBox -Text $AnnualString -Color "Blue"
             }
 
             else
             {
-                OutputFormAppendText -Text $AnnualString
+                RichTextBoxAppendText -RichTextBox $RichTextBox -Text $AnnualString
             }
 
             #Add Sick with color
@@ -1401,12 +1395,12 @@ function PopulateOutputFormRichTextBox
 
             if($LeaveBalancesCopy[1].Balance -lt 0)
             {
-                OutputFormAppendText -Text $SickString -Color "Red"
+                RichTextBoxAppendText -RichTextBox $RichTextBox -Text $SickString -Color "Red"
             }
 
             else
             {
-                OutputFormAppendText -Text $SickString
+                RichTextBoxAppendText -RichTextBox $RichTextBox -Text $SickString
             }
     
             #If projecting to date, append the rest of the balances and their expiration if they expire.
@@ -1434,12 +1428,12 @@ function PopulateOutputFormRichTextBox
 
                         if($LeaveBalancesCopy[$Index].Balance -lt 0)
                         {
-                            OutputFormAppendText -Text $String -Color "Red"
+                            RichTextBoxAppendText -RichTextBox $RichTextBox -Text $String -Color "Red"
                         }
 
                         else
                         {
-                            OutputFormAppendText -Text $String
+                            RichTextBoxAppendText -RichTextBox $RichTextBox -Text $String
                         }
                     }
                 }
@@ -1467,7 +1461,7 @@ function PopulateOutputFormRichTextBox
     {
         $String = "`n`nAnnual Leave High:`t" + [Math]::Floor($AnnualHigh) + "`nSick Leave High:`t`t" + [Math]::Floor($SickHigh) + "`nAnnual Leave Low:`t" + [Math]::Floor($AnnualLow) + "`nSick Leave Low:`t`t" + [Math]::Floor($SickLow)
         
-        OutputFormAppendText -Text $String
+        RichTextBoxAppendText -RichTextBox $RichTextBox -Text $String
     }
 
     if($Script:ProjectOrGoal -eq "Goal")
@@ -1476,44 +1470,44 @@ function PopulateOutputFormRichTextBox
         {
             $String = "`n`nAnnual Leave and Sick Leave Goals Achieved After Pay Period Ending " + $EndOfPayPeriod.ToString("MM/dd/yyyy") + "."
 
-            OutputFormAppendText -Text $String
+            RichTextBoxAppendText -RichTextBox $RichTextBox -Text $String
         }
 
         else
         {
             $String = "`n`nGoals not met by " + $EndOfPayPeriod.ToString("MM/dd/yyyy") + "."
 
-            OutputFormAppendText -Text $String
+            RichTextBoxAppendText -RichTextBox $RichTextBox -Text $String
         }
 
         $String = "`n`nGoals:`nAnnual:`t" + $Script:AnnualGoal + "`nSick:`t" + $Script:SickGoal
 
-        OutputFormAppendText -Text $String
+        RichTextBoxAppendText -RichTextBox $RichTextBox -Text $String
     }
 
-    OutputFormAppendText -Text "`n"
+    RichTextBoxAppendText -RichTextBox $RichTextBox -Text "`n"
 
     #Add the section header
-    OutputFormAppendText -Text ("`nEnding Balances After Pay Period Ending " + $EndOfPayPeriod.ToString("MM/dd/yyyy") + ":`n") -Alignment "Center" -FontSize ($Script:OutputForm.Controls["OutputRichTextBox"].Font.Size + 2) -FontStyle "Bold"
+    RichTextBoxAppendText -RichTextBox $RichTextBox -Text ("`nEnding Balances After Pay Period Ending " + $EndOfPayPeriod.ToString("MM/dd/yyyy") + ":`n") -Alignment "Center" -FontSize ($Script:OutputForm.Controls["OutputRichTextBox"].Font.Size + 2) -FontStyle "Bold"
 
     #Add Annual with color
     $AnnualString = $LeaveBalancesCopy[0].Name + ":`t`t" + $LeaveBalancesCopy[0].Balance
 
     if($LeaveBalancesCopy[0].Balance -lt 0)
     {
-        OutputFormAppendText -Text $AnnualString -Color "Red"
+        RichTextBoxAppendText -RichTextBox $RichTextBox -Text $AnnualString -Color "Red"
     }
 
     elseif($LeaveBalancesCopy[0].Balance -gt $Script:LeaveCeiling)
     {
         $AnnualString += "`tBalance is greater than your Annual Leave ceiling."
         
-        OutputFormAppendText -Text $AnnualString -Color "Blue"
+        RichTextBoxAppendText -RichTextBox $RichTextBox -Text $AnnualString -Color "Blue"
     }
 
     else
     {
-        OutputFormAppendText -Text $AnnualString
+        RichTextBoxAppendText -RichTextBox $RichTextBox -Text $AnnualString
     }
 
     #Add Sick with color
@@ -1521,12 +1515,12 @@ function PopulateOutputFormRichTextBox
 
     if($LeaveBalancesCopy[1].Balance -lt 0)
     {
-        OutputFormAppendText -Text $SickString -Color "Red"
+        RichTextBoxAppendText -RichTextBox $RichTextBox -Text $SickString -Color "Red"
     }
 
     else
     {
-        OutputFormAppendText -Text $SickString
+        RichTextBoxAppendText -RichTextBox $RichTextBox -Text $SickString
     }
     
     #If projecting to date, append the rest of the balances and their expiration if they expire.
@@ -1554,12 +1548,12 @@ function PopulateOutputFormRichTextBox
 
                 if($LeaveBalancesCopy[$Index].Balance -lt 0)
                 {
-                    OutputFormAppendText -Text $String -Color "Red"
+                    RichTextBoxAppendText -RichTextBox $RichTextBox -Text $String -Color "Red"
                 }
 
                 else
                 {
-                    OutputFormAppendText -Text $String
+                    RichTextBoxAppendText -RichTextBox $RichTextBox -Text $String
                 }
             }
         }
@@ -1603,7 +1597,7 @@ function PopulateOutputFormRichTextBox
             $String += "`n`nIf possible, you should submit the leave requests on or before " + (GetLeaveYearScheduleDeadline -Date $LeaveYearEnd).ToString("MM/dd/yyyy") + " so "
             $String += "these hours are eligible to be restored if you are unable to take your scheduled Annual Leave for a few specific reasons which causes you to forfeit these hours."
 
-            OutputFormAppendText -Text $String -Color "Blue"
+            RichTextBoxAppendText -RichTextBox $RichTextBox -Text $String -Color "Blue"
         }
     }
 }
@@ -2143,19 +2137,19 @@ function MainFormKeyDown
         MainFormHelpButtonClick
     }
 
-    elseif($EventArguments.KeyCode -eq "F2")
+    elseif($EventArguments.KeyCode -eq "F6")
     {
         MainFormUpdateInfoButtonClick
     }
 
-    elseif($EventArguments.KeyCode -eq "F3")
+    elseif($EventArguments.KeyCode -eq "F7")
     {
         $MainForm.ActiveControl = $Script:MainForm.Controls["LeavePanel"].Controls["BalanceListBox"]
         
         MainFormBalanceEditButtonClick
     }
 
-    elseif($EventArguments.KeyCode -eq "F4" -and
+    elseif($EventArguments.KeyCode -eq "F8" -and
            $Script:ProjectedLeave.Count -gt 0)
     {
         $MainForm.ActiveControl = $Script:MainForm.Controls["LeavePanel"].Controls["ProjectedListBox"]
@@ -5032,13 +5026,13 @@ function BuildHelpForm
     $HelpForm.Text            = "Help"
     $HelpForm.WindowState     = "Normal"
 
-    $OutputRichTextBox = New-Object System.Windows.Forms.RichTextBox
-    $OutputRichTextBox.Name = "OutputRichTextBox"
-    $OutputRichTextBox.Dock = "Top"
-    $OutputRichTextBox.Height = 430
-    $OutputRichTextBox.Multiline = $True
-    $OutputRichTextBox.ReadOnly = $True
-    $OutputRichTextBox.TabStop = $False
+    $HelpRichTextBox = New-Object System.Windows.Forms.RichTextBox
+    $HelpRichTextBox.Name = "HelpRichTextBox"
+    $HelpRichTextBox.Dock = "Top"
+    $HelpRichTextBox.Height = 430
+    $HelpRichTextBox.Multiline = $True
+    $HelpRichTextBox.ReadOnly = $True
+    $HelpRichTextBox.TabStop = $False
     
     $CloseButton = New-Object System.Windows.Forms.Button
     $CloseButton.Name = "CloseButton"
@@ -5048,9 +5042,12 @@ function BuildHelpForm
     $CloseButton.Top = 437
     $CloseButton.Width = 336
     
-    $HelpForm.Controls.AddRange(($OutputRichTextBox, $CloseButton))
+    $HelpForm.Controls.AddRange(($HelpRichTextBox, $CloseButton))
+
+    RichTextBoxAppendText -RichTextBox $HelpRichTextBox -Text "www.google.com" -Alignment "Center" -FontSize 20 -FontStyle "Bold"
     
     $HelpForm.Add_KeyDown({HelpFormKeyDown -EventArguments $_})
+    $HelpRichTextBox.Add_LinkClicked({Start-Process $_.LinkText}.GetNewClosure())
     $CloseButton.Add_Click({HelpFormCloseButton})
 }
 
