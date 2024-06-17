@@ -1,26 +1,16 @@
-<#
-Annual Leave Fact Sheet: https://www.opm.gov/policy-data-oversight/pay-leave/leave-administration/fact-sheets/annual-leave/
-Sick Leave Fact Sheet: https://www.opm.gov/policy-data-oversight/pay-leave/leave-administration/fact-sheets/sick-leave-general-information/
-Leave Year Beginning/Ending Dates: https://www.opm.gov/policy-data-oversight/pay-leave/leave-administration/fact-sheets/leave-year-beginning-and-ending-dates/
-Federal Holidays: https://www.opm.gov/policy-data-oversight/pay-leave/federal-holidays/
-Holiday Clarification on Who Gets the Inauguration Holiday: https://www.opm.gov/policy-data-oversight/pay-leave/pay-administration/fact-sheets/holidays-work-schedules-and-pay/
-#>
-
-<#
-Todo When switching to Reach Goal mode, hide the label showing the "Will Project Through..."
-
-Maybe Todo: Instead of manually doing the MM/dd/yyyy format for all the strings and the DateTimePickers, I should get the format the user has set on their computer with:
-([System.Globalization.CultureInfo]::CurrentCulture.DateTimeFormat).ShortDatePattern
-And then use that in all the ToString("MM/dd/yyyy") areas.
-Also for the DateTimePickers, I should set the format to "Custom" and then the CustomFormat to that string as well. Uniformity! Then double check
-label location in all the forms to make sure that it centers them correctly no matter the length, so probably need to do a runtime calculation of the Left property.
-#>
+$Script:Author      = "Mikepedia"
+#SCRIPT NAME:         Federal Civilian Leave Calculator
+$Script:DateUpdated = "17 June 2024 13:55 CDT"
+$Script:Version     = "1.0"
+#SCRIPT PURPOSE:      To assist users with managing and projecting future leave.
 
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
 #Enable nicer looking visual styles, especially on the DateTimePickers.
 [System.Windows.Forms.Application]::EnableVisualStyles()
+
+#region Script variables
 
 $Script:FormFont     = New-Object System.Drawing.Font("Times New Roman", 10)
 $Script:IconsFont    = New-Object System.Drawing.Font("Segoe MDL2 Assets", 10, [System.Drawing.FontStyle]::Bold)
@@ -51,6 +41,8 @@ $Script:InaugurationDayHashTable = @{}
 
 $Script:UnsavedProjectedLeave = $False
 $Script:DrawingListBox        = $False
+
+#endregion Script variables
 
 #region Default Settings -- Changing values here only affects the first launch of the program. After that, it loads from a config file.
 
@@ -118,7 +110,7 @@ function Main
 {
     $Script:BeginningOfPayPeriod = GetBeginningOfPayPeriodForDate -Date $Script:CurrentDate
     $Script:LastSelectableDate   = GetLeaveYearEndForDate -Date ((Get-Date -Year ($Script:BeginningOfPayPeriod.Year + 2) -Month $Script:BeginningOfPayPeriod.Month -Day $Script:BeginningOfPayPeriod.Day)).Date
-    #GetOpmHolidaysForYears #Todo uncomment this.
+    GetOpmHolidaysForYears
     LoadConfig
     SetWorkHoursPerPayPeriod
     GetAccrualRateDateChange
@@ -2211,6 +2203,8 @@ function MainFormProjectBalanceRadioButtonClick
     
     $Script:MainForm.Controls["ReportPanel"].Controls["ProjectToDateDateTimePicker"].Enabled = $True
 
+    $Script:MainForm.Controls["ReportPanel"].Controls["ProjectToEndOfPayPeriodLabel"].Visible = $True
+
     $Script:MainForm.Controls["ReportPanel"].Controls["AnnualGoalNumericUpDown"].Enabled = $False
     $Script:MainForm.Controls["ReportPanel"].Controls["SickGoalNumericUpDown"].Enabled   = $False
 }
@@ -2220,6 +2214,8 @@ function MainFormReachGoalRadioButtonClick
     $Script:ProjectOrGoal = "Goal"
     
     $Script:MainForm.Controls["ReportPanel"].Controls["ProjectToDateDateTimePicker"].Enabled = $False
+
+    $Script:MainForm.Controls["ReportPanel"].Controls["ProjectToEndOfPayPeriodLabel"].Visible = $False
 
     $Script:MainForm.Controls["ReportPanel"].Controls["AnnualGoalNumericUpDown"].Enabled = $True
     $Script:MainForm.Controls["ReportPanel"].Controls["SickGoalNumericUpDown"].Enabled   = $True
@@ -5044,7 +5040,62 @@ function BuildHelpForm
     
     $HelpForm.Controls.AddRange(($HelpRichTextBox, $CloseButton))
 
-    RichTextBoxAppendText -RichTextBox $HelpRichTextBox -Text "www.google.com" -Alignment "Center" -FontSize 20 -FontStyle "Bold"
+    #Keyboard Shortcuts Section
+    RichTextBoxAppendText -RichTextBox $HelpRichTextBox -Text "Keyboard Shortcuts`n" -Alignment "Center" -FontSize 20 -FontStyle "Bold"
+    RichTextBoxAppendText -RichTextBox $HelpRichTextBox -Text "`n"
+    RichTextBoxAppendText -RichTextBox $HelpRichTextBox -Text "Enter – If in a sub-form and a button doesn’t have the focus, will generally hit the `“OK`” button."
+    RichTextBoxAppendText -RichTextBox $HelpRichTextBox -Text "`n`nEsc – If in a sub-form, will generally hit the `“Cancel`” button."
+    RichTextBoxAppendText -RichTextBox $HelpRichTextBox -Text "`n`nTab will cycle through the available controls. Shift-tab to go the opposite way."
+    RichTextBoxAppendText -RichTextBox $HelpRichTextBox -Text "`n`nArrow keys can be used to change some selections, and the space bar can be used to check/uncheck boxes."
+    RichTextBoxAppendText -RichTextBox $HelpRichTextBox -Text "`n`nF1: Show this help page."
+    RichTextBoxAppendText -RichTextBox $HelpRichTextBox -Text "`n`nF5: Run the projection with the current settings."
+    RichTextBoxAppendText -RichTextBox $HelpRichTextBox -Text "`n`nF6: Open Employee Info."
+    RichTextBoxAppendText -RichTextBox $HelpRichTextBox -Text "`n`nF7: Edit the selected Leave Balance item."
+    RichTextBoxAppendText -RichTextBox $HelpRichTextBox -Text "`n`nF8: Edit the selected Projected Leave item."
+    RichTextBoxAppendText -RichTextBox $HelpRichTextBox -Text "`n`nIf either the Leave Balance or Projected Leave list boxes have the focus, Enter will open the appropriate edit menu for the selected item, + will add a new item, and Del will delete the selected item. Double clicking an item in either list box will open the appropriate edit menu."
+    RichTextBoxAppendText -RichTextBox $HelpRichTextBox -Text "`n"
+
+    #Program Features Section
+    RichTextBoxAppendText -RichTextBox $HelpRichTextBox -Text "`nProgram Features`n" -Alignment "Center" -FontSize 20 -FontStyle "Bold"
+    RichTextBoxAppendText -RichTextBox $HelpRichTextBox -Text "`n"
+    RichTextBoxAppendText -RichTextBox $HelpRichTextBox -Text "Input your current leave balances, projected leave, the date you wish to project to or a goal you wish to reach, and the program will do the counting for you to help you manage and plan your leave. It allows you to keep track of when leave expires, as well as warns you if you’ll be over your Lose/Use ceiling at the end of the leave year or will forfeit leave. It has options to alert you if your annual or sick leave balance drops below a certain threshold. It also displays when your annual leave accrual rate will change if applicable. Supports Full-Time, Part-Time, and SES employees. The program also saves your data and automatically updates it based on the entered info."
+    RichTextBoxAppendText -RichTextBox $HelpRichTextBox -Text "`n"
+
+    #Usage Section
+    RichTextBoxAppendText -RichTextBox $HelpRichTextBox -Text "`nUsage`n" -Alignment "Center" -FontSize 20 -FontStyle "Bold"
+    RichTextBoxAppendText -RichTextBox $HelpRichTextBox -Text "`n"
+    RichTextBoxAppendText -RichTextBox $HelpRichTextBox -Text "This program does not submit leave requests on your behalf. It is a tool to help you easily calculate what your leave balances will be in the future after leave accrual and taking leave."
+    RichTextBoxAppendText -RichTextBox $HelpRichTextBox -Text "`n`nThis program is designed to do everything based on the pay period schedule. All information displayed on the main page is based on the data at the end of the last pay period and all output information shows to the end of the pay period. All dates are in the MM/DD/YYYY format."
+    RichTextBoxAppendText -RichTextBox $HelpRichTextBox -Text "`n`nUpon launching the program, you should configure your settings. Set your SCD Leave Date in the upper left (this can be found in your most recent SF-50 or LES), update your Employee Information by clicking the button. If your Employee Type is not SES and you are not in the 15+ year category, you can click the box showing your Length of Service to cycle through additional information. Your Employment Type can be found in Box 32 of your most recent SF-50. Your Leave Ceiling value can be found in your most recent LES under Max Leave Carry Over. See Helpful Links below to determine if you are entitled to a holiday on Inauguration Day. Fill out your current work schedule where Week 1 is the first week of a Pay Period and Week 2 is the second week."
+    RichTextBoxAppendText -RichTextBox $HelpRichTextBox -Text "`n`nCheck the appropriate boxes to have the program display the Leave Balances after each day that you have input that you are taking leave, after each Pay Period, or keep track of the highest and lowest value that your Annual and Sick leave reach during the projection period. These options can make the output quite verbose but give you a deeper understanding of your leave balances at any given time."
+    RichTextBoxAppendText -RichTextBox $HelpRichTextBox -Text "`n`nInput your Leave Balances as of the Pay Period ending listed in the program. You can find this from your most recent LES (you might need to wait a few days for this LES to be available). For Annual and Sick Leave, you may set an Alert Threshold. In the projection, if your balance drops below this value, it will alert you. Leave it set to 0 to disable this feature. This will work whether or not you have enabled displaying the Annual and Sick Leave highs and lows. For any other types of leave, select if the leave expires or not (e.g. award leave). If it expires, select the last date the leave is available for you to use."
+    RichTextBoxAppendText -RichTextBox $HelpRichTextBox -Text "`n`nInput your Projected Leave as of the Pay Period ending listed in the program. Select which Leave Bank you wish to use for this entry, the first date you will be using leave, and the last date you will be using leave. Please note, the Leave End date must be in the same pay period as the Leave Start date. If you expect to take leave across multiple pay periods, you must use multiple entries. After selecting your Leave Start/End dates, input the number of hours of leave you will take per day. These values will be automatically filled as whole days based on your work schedule input in the Employee Info. It will also automatically input 0 hours for holidays and show a note informing you of which holiday it is (It gets these holidays from the OPM website showing federal holidays. If this fails, it will warn you to manually verify the hours). You can always adjust this. By default, each entry will be checked. If you wish to quickly compare different projected leave schedules, you can uncheck the items you wish to be ignored in your calculations. Please remember, this is the input data as of the ending of the last pay period. Even if you have already taken leave since the end of the last pay period, include it here so the program is aware of it."
+    RichTextBoxAppendText -RichTextBox $HelpRichTextBox -Text "`n`nSelect which mode you wish the program to run in. Project to Date will calculate and show your balances through the end of the Pay Period for the date you select. Reach Goal will tell you what Pay Period your balance meets or exceeds the goals you set. Please note, in Reach Goal mode, the output will only include information about Annual and Sick Leave except for alerts such as going negative on a balance, falling below a set threshold, or forfeiting leave."
+    RichTextBoxAppendText -RichTextBox $HelpRichTextBox -Text "`n`nIf you are Part-Time, you might not accrue leave hours in whole numbers. The program keeps track of these partial hours and adds them to your balance, but it may not perfectly reflect your partial hour balance. To reset the partial hours, change your employee type to Full-Time or SES, close the program, and open it again."
+    RichTextBoxAppendText -RichTextBox $HelpRichTextBox -Text "`n"
+
+    #Saving Your Data Section
+    RichTextBoxAppendText -RichTextBox $HelpRichTextBox -Text "`nSaving Your Data`n" -Alignment "Center" -FontSize 20 -FontStyle "Bold"
+    RichTextBoxAppendText -RichTextBox $HelpRichTextBox -Text "`n"
+    RichTextBoxAppendText -RichTextBox $HelpRichTextBox -Text "If you close the program by clicking the X on the GUI, it will write a configuration file to `"$Script:ConfigFile`" which will save all your data. The next time you launch the program, it will calculate what your balance should be assuming you took all your projected leave (whether or not the projected leave item was checked) and update your balances and projected leave. If you do not wish for this configuration file to be written, close the program by clicking the X on the PowerShell window."
+    RichTextBoxAppendText -RichTextBox $HelpRichTextBox -Text "`n"
+
+    #Helpful Links Section
+    RichTextBoxAppendText -RichTextBox $HelpRichTextBox -Text "`nHelpful Links`n" -Alignment "Center" -FontSize 20 -FontStyle "Bold"
+    RichTextBoxAppendText -RichTextBox $HelpRichTextBox -Text "`n"
+    RichTextBoxAppendText -RichTextBox $HelpRichTextBox -Text "Annual Leave Fact Sheet: https://www.opm.gov/policy-data-oversight/pay-leave/leave-administration/fact-sheets/annual-leave/"
+    RichTextBoxAppendText -RichTextBox $HelpRichTextBox -Text "`n`nSick Leave Fact Sheet: https://www.opm.gov/policy-data-oversight/pay-leave/leave-administration/fact-sheets/sick-leave-general-information/"
+    RichTextBoxAppendText -RichTextBox $HelpRichTextBox -Text "`n`nLeave Year Beginning/Ending Dates: https://www.opm.gov/policy-data-oversight/pay-leave/leave-administration/fact-sheets/leave-year-beginning-and-ending-dates/"
+    RichTextBoxAppendText -RichTextBox $HelpRichTextBox -Text "`n`nHoliday Work Schedules and Pay (Are you entitled to a holiday on Inauguration Day?): https://www.opm.gov/policy-data-oversight/pay-leave/pay-administration/fact-sheets/holidays-work-schedules-and-pay/"
+    RichTextBoxAppendText -RichTextBox $HelpRichTextBox -Text "`n`nFederal Holidays: https://www.opm.gov/policy-data-oversight/pay-leave/federal-holidays/"
+    RichTextBoxAppendText -RichTextBox $HelpRichTextBox -Text "`n"
+
+    #About Section
+    RichTextBoxAppendText -RichTextBox $HelpRichTextBox -Text "`nAbout`n" -Alignment "Center" -FontSize 20 -FontStyle "Bold"
+    RichTextBoxAppendText -RichTextBox $HelpRichTextBox -Text "`n"
+    RichTextBoxAppendText -RichTextBox $HelpRichTextBox -Text "Author: $Script:Author"
+    RichTextBoxAppendText -RichTextBox $HelpRichTextBox -Text "`n`nVersion: $Script:Version"
+    RichTextBoxAppendText -RichTextBox $HelpRichTextBox -Text "`n`nLast Updated: $Script:DateUpdated"
     
     $HelpForm.Add_KeyDown({HelpFormKeyDown -EventArguments $_})
     $HelpRichTextBox.Add_LinkClicked({Start-Process $_.LinkText}.GetNewClosure())
