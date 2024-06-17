@@ -1,8 +1,16 @@
+#Line I stopped at: 1
+
 $Script:Author      = "Mikepedia"
 #SCRIPT NAME:         Federal Civilian Leave Calculator
-$Script:DateUpdated = "17 June 2024 13:55 CDT"
+$Script:DateUpdated = "17 June 2024 15:37 CDT"
 $Script:Version     = "1.0"
 #SCRIPT PURPOSE:      To assist users with managing and projecting future leave.
+
+#region Change Log
+<#
+    Version 1.0: Initial Release.
+#>
+#endregion Change Log
 
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
@@ -34,6 +42,8 @@ $Script:MaximumSick   = 9999 #Assuming you work full time, every year has 27 pay
 $Script:LeaveBalances  = New-Object System.Collections.Generic.List[PSCustomObject]
 $Script:ProjectedLeave = New-Object System.Collections.Generic.List[PSCustomObject]
 
+$Script:RepoWebsite              = "https://github.com/mikedelliot/FedCivLeaveCalculator/blob/main/Leave%20Calculator.ps1"
+$Script:EdgeUserAgent             = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
 $Script:ConfigFile               = "$env:APPDATA\PowerShell Scripts\Federal Civilian Leave Calculator\Federal Civilian Leave Calculator.ini"
 $Script:HolidayWebsite           = "https://www.opm.gov/policy-data-oversight/pay-leave/federal-holidays/"
 $Script:HolidaysHashTable        = @{}
@@ -115,6 +125,9 @@ function Main
     SetWorkHoursPerPayPeriod
     GetAccrualRateDateChange
     UpdateExistingBalancesAndProjectedLeaveAtLaunch
+    GetGitHubVersion
+
+    clear
 
     BuildMainForm
     
@@ -274,6 +287,48 @@ function GetLeaveYearScheduleDeadline
     return $Date.AddDays(-42) #42 Days is the day before the start of the third biweekly pay period prior to the end of the leave year.
 }
 
+function GetGitHubVersion
+{
+    try
+    {
+        Write-Host "Checking version against online repository."
+        
+        $GitHubContent = (Invoke-WebRequest -DisableKeepAlive -Uri $Script:RepoWebsite -UserAgent $Script:EdgeUserAgent).Content
+        
+        #RegEx Matches
+        #Literal text              Script:Version
+        #Matches as many spaces as possible       +=
+        #Matches literal text and escaped chars      \\"
+        #Capture group                                  (   )
+        #Matches char as many times (not greedy)         .*?
+        #Matches literal text and escaped chars              \\"\\r
+        if(($GitHubContent -match 'Script:Version += \\"(.*?)\\"\\r') -eq $True)
+        {
+            if($Matches[1] -ne $Script:Version)
+            {
+                $NewVersion = $Matches[1]
+                
+                $Response = ShowMessageBox -Text "There is a new version available. You are running version $Script:Version and the newest version is $NewVersion. Would you like to open your web browser so you can download the newest version?" -Caption "Updates Available" -Buttons "YesNo" -Icon "Exclamation"
+
+                if($Response -eq "Yes")
+                {
+                    Start-Process $Script:RepoWebsite
+                }
+            }
+        }
+    }
+
+    catch
+    {
+        $Response = ShowMessageBox -Text "There was an error checking for updates. You are running version $Script:Version. Would you like to open your web browser to manually check if there is an update?" -Caption "Unable to Check for Updates" -Buttons "YesNo" -Icon "Error"
+
+        if($Response -eq "Yes")
+        {
+            Start-Process $Script:RepoWebsite
+        }
+    }
+}
+
 function GetOpmHolidaysForYears
 {
     $BeginningYear = ($Script:BeginningOfPayPeriod).Year
@@ -283,6 +338,8 @@ function GetOpmHolidaysForYears
     
     try
     {
+        Write-Host "Getting holidays from OPM website."
+        
         $HolidayContent = (Invoke-WebRequest -DisableKeepAlive -Uri $Script:HolidayWebsite).Content
     }
 
@@ -5065,7 +5122,7 @@ function BuildHelpForm
     RichTextBoxAppendText -RichTextBox $HelpRichTextBox -Text "`nUsage`n" -Alignment "Center" -FontSize 20 -FontStyle "Bold"
     RichTextBoxAppendText -RichTextBox $HelpRichTextBox -Text "`n"
     RichTextBoxAppendText -RichTextBox $HelpRichTextBox -Text "This program does not submit leave requests on your behalf. It is a tool to help you easily calculate what your leave balances will be in the future after leave accrual and taking leave."
-    RichTextBoxAppendText -RichTextBox $HelpRichTextBox -Text "`n`nThis program is designed to do everything based on the pay period schedule. All information displayed on the main page is based on the data at the end of the last pay period and all output information shows to the end of the pay period. All dates are in the MM/DD/YYYY format."
+    RichTextBoxAppendText -RichTextBox $HelpRichTextBox -Text "`n`nThis program is designed to do everything based on the pay period schedule. All information displayed on the main page is based on the data at the end of the last pay period and all output information shows to the end of the pay period. All dates are in the MM/DD/YYYY format. This program makes two web requests: One to the OPM Federal Holidays website (see Helpful Links below) to assist in filling out projected leave and the second to the GitHub repository for this program to check if there is an update."
     RichTextBoxAppendText -RichTextBox $HelpRichTextBox -Text "`n`nUpon launching the program, you should configure your settings. Set your SCD Leave Date in the upper left (this can be found in your most recent SF-50 or LES), update your Employee Information by clicking the button. If your Employee Type is not SES and you are not in the 15+ year category, you can click the box showing your Length of Service to cycle through additional information. Your Employment Type can be found in Box 32 of your most recent SF-50. Your Leave Ceiling value can be found in your most recent LES under Max Leave Carry Over. See Helpful Links below to determine if you are entitled to a holiday on Inauguration Day. Fill out your current work schedule where Week 1 is the first week of a Pay Period and Week 2 is the second week."
     RichTextBoxAppendText -RichTextBox $HelpRichTextBox -Text "`n`nCheck the appropriate boxes to have the program display the Leave Balances after each day that you have input that you are taking leave, after each Pay Period, or keep track of the highest and lowest value that your Annual and Sick leave reach during the projection period. These options can make the output quite verbose but give you a deeper understanding of your leave balances at any given time."
     RichTextBoxAppendText -RichTextBox $HelpRichTextBox -Text "`n`nInput your Leave Balances as of the Pay Period ending listed in the program. You can find this from your most recent LES (you might need to wait a few days for this LES to be available). For Annual and Sick Leave, you may set an Alert Threshold. In the projection, if your balance drops below this value, it will alert you. Leave it set to 0 to disable this feature. This will work whether or not you have enabled displaying the Annual and Sick Leave highs and lows. For any other types of leave, select if the leave expires or not (e.g. award leave). If it expires, select the last date the leave is available for you to use."
@@ -5096,6 +5153,7 @@ function BuildHelpForm
     RichTextBoxAppendText -RichTextBox $HelpRichTextBox -Text "Author: $Script:Author"
     RichTextBoxAppendText -RichTextBox $HelpRichTextBox -Text "`n`nVersion: $Script:Version"
     RichTextBoxAppendText -RichTextBox $HelpRichTextBox -Text "`n`nLast Updated: $Script:DateUpdated"
+    RichTextBoxAppendText -RichTextBox $HelpRichTextBox -Text "`n`nOnline Repository Link: $Script:RepoWebsite"
     
     $HelpForm.Add_KeyDown({HelpFormKeyDown -EventArguments $_})
     $HelpRichTextBox.Add_LinkClicked({Start-Process $_.LinkText}.GetNewClosure())
