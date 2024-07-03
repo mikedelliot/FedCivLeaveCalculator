@@ -1,17 +1,18 @@
-#Line I stopped at: 1
+#Line I have commented through (need to finish): 1523
 
 $Script:Author      = "Mikepedia"
 #SCRIPT NAME:         Federal Civilian Leave Calculator
 $Script:DateUpdated = "17 June 2024 15:37 CDT"
-$Script:Version     = "1.0"
+$Script:Version     = "beta 1.0"
 #SCRIPT PURPOSE:      To assist users with managing and projecting future leave.
 
 #region Change Log
 <#
-    Version 1.0: Initial Release.
+    Version beta 1.0: Initial Release.
 #>
 #endregion Change Log
 
+#Need these for the GUI.
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
@@ -36,25 +37,24 @@ $Script:LengthOfServiceString = $Null
 $Script:DateOfMileStoneString = $Null
 $Script:TimeUntilMilestone    = $Null
 
-$Script:MaximumAnnual = 936 #With SES ceiling of 720 and SES accrual and rare year with 27 pay periods.
+$Script:MaximumAnnual = 936  #With SES ceiling of 720 and SES accrual and rare year with 27 pay periods.
 $Script:MaximumSick   = 9999 #Assuming you work full time, every year has 27 pay periods, and you never use a single hour, it would take almost 93 years to reach this amount.
 
 $Script:LeaveBalances  = New-Object System.Collections.Generic.List[PSCustomObject]
 $Script:ProjectedLeave = New-Object System.Collections.Generic.List[PSCustomObject]
 
 $Script:RepoWebsite              = "https://github.com/mikedelliot/FedCivLeaveCalculator/blob/main/Leave%20Calculator.ps1"
-$Script:EdgeUserAgent             = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
 $Script:ConfigFile               = "$env:APPDATA\PowerShell Scripts\Federal Civilian Leave Calculator\Federal Civilian Leave Calculator.ini"
 $Script:HolidayWebsite           = "https://www.opm.gov/policy-data-oversight/pay-leave/federal-holidays/"
-$Script:HolidaysHashTable        = @{}
-$Script:InaugurationDayHashTable = @{}
+$Script:HolidaysHashTable        = @{} #Where the dates and names of holidays are contained except for Inauguration Day.
+$Script:InaugurationDayHashTable = @{} #Same as above, but only for Inauguration Day.
 
-$Script:UnsavedProjectedLeave = $False
-$Script:DrawingListBox        = $False
+$Script:UnsavedProjectedLeave = $False #A way to keep track if the Projected Leave is new or not, which controls the Cancel button behavior.
+$Script:DrawingListBox        = $False #This is so when drawing the CheckedListBox and checking the appropriate boxes that we don't fire events unnecessarily.
 
 #endregion Script variables
 
-#region Default Settings -- Changing values here only affects the first launch of the program. After that, it loads from a config file.
+#region Default Settings -- Changing values here only affects the first launch of the program. After that, it loads from a config file. To make changes, launch the script and change the settings there.
 
 $Script:LastLaunchedDate = $Script:CurrentDate
 $Script:SCDLeaveDate     = $Script:CurrentDate
@@ -116,24 +116,26 @@ $Script:LeaveBalances.Add($SickLeaveCustomObject)
 
 #region Functions
 
+#This function is called once as the last line of the script. This is what kicks off the program.
 function Main
 {
     $Script:BeginningOfPayPeriod = GetBeginningOfPayPeriodForDate -Date $Script:CurrentDate
-    $Script:LastSelectableDate   = GetLeaveYearEndForDate -Date ((Get-Date -Year ($Script:BeginningOfPayPeriod.Year + 2) -Month $Script:BeginningOfPayPeriod.Month -Day $Script:BeginningOfPayPeriod.Day)).Date
-    GetOpmHolidaysForYears
-    LoadConfig
-    SetWorkHoursPerPayPeriod
-    GetAccrualRateDateChange
-    UpdateExistingBalancesAndProjectedLeaveAtLaunch
-    GetGitHubVersion
+    $Script:LastSelectableDate   = GetLeaveYearEndForDate -Date ((Get-Date -Year ($Script:BeginningOfPayPeriod.Year + 2) -Month $Script:BeginningOfPayPeriod.Month -Day $Script:BeginningOfPayPeriod.Day)).Date #Get the last day of the leave year for whatever year is the current year + 2.
+    GetOpmHolidaysForYears                          #Get the OPM holidays for the year range of beginning of current pay period year to last selectable date year.
+    LoadConfig                                      #Load saved data.
+    SetWorkHoursPerPayPeriod                        #Calculate how many hours per pay period based on saved data. This is so leave accruals can be correct if part-time.
+    GetAccrualRateDateChange                        #Get the date that the accrual rates change.
+    UpdateExistingBalancesAndProjectedLeaveAtLaunch #Update projected leave and balances to the current date based on what was entered.
+    GetGitHubVersion                                #Check for program updates.
 
     clear
 
-    BuildMainForm
+    BuildMainForm #Create the GUI.
     
-    [System.Windows.Forms.Application]::Run($Script:MainForm)
+    [System.Windows.Forms.Application]::Run($Script:MainForm) #Display the GUI.
 }
 
+#This function adds 3 years and 15 years to the SCD date, finds the end of the pay period it happens in if not the beginning of a pay period, and then adds one day to get the start of the next pay period.
 function GetAccrualRateDateChange
 {
     $Script:ThreeYearMark   = $Script:SCDLeaveDate.AddYears(3)
@@ -150,6 +152,7 @@ function GetAccrualRateDateChange
     }
 }
 
+#Returns how many hours of annual leave will be accrued based on the pay period argument.
 function GetAnnualLeaveAccrualHours
 {
     [CmdletBinding()]
@@ -160,21 +163,21 @@ function GetAnnualLeaveAccrualHours
     
     $AccruedHours = 0
 
-    if($Script:EmployeeType -eq "SES")
+    if($Script:EmployeeType -eq "SES") #SES always gets 8 hours, no matter SCD date.
     {
         $AccruedHours = 8
     }
 
     else
     {
-        if($Script:EmployeeType -eq "Full-Time")
+        if($Script:EmployeeType -eq "Full-Time") #Full-time gets a specific amount every pay period, no calculations needed.
         {
             if($PayPeriod -ge $Script:FifteenYearMark)
             {
                 $AccruedHours = 8
             }
 
-            elseif($PayPeriod -ge $Script:ThreeYearMark)
+            elseif($PayPeriod -ge $Script:ThreeYearMark) #6 hours per pay period except last pay period of year, which is 10 hours.
             {
                 if((GetEndingOfPayPeriodForDate -Date $PayPeriod) -eq (GetLeaveYearEndForDate -Date $PayPeriod))
                 {
@@ -193,7 +196,7 @@ function GetAnnualLeaveAccrualHours
             }
         }
 
-        else #Part-Time
+        else #Part-Time accured hours are based on hours worked per pay period, so a calculation is needed.
         {
             if($PayPeriod -ge $Script:FifteenYearMark)
             {
@@ -215,6 +218,7 @@ function GetAnnualLeaveAccrualHours
     return $AccruedHours
 }
 
+#Returns the beginning of a pay period for the date argument.
 function GetBeginningOfPayPeriodForDate
 {
     [CmdletBinding()]
@@ -227,6 +231,7 @@ function GetBeginningOfPayPeriodForDate
     return $Date.AddDays(-($Date - $Script:LeaveYearBeginningBaseline).Days % 14)
 }
 
+#Returns the last day of a pay period for the date argument.
 function GetEndingOfPayPeriodForDate
 {
     [CmdletBinding()]
@@ -239,6 +244,7 @@ function GetEndingOfPayPeriodForDate
     return (GetBeginningOfPayPeriodForDate -Date $Date).AddDays(13)
 }
 
+#Returns how many hours are worked on the day provided in the argument based on the input work schedule and if it's a holiday or not.
 function GetHoursForWorkDay
 {
     [CmdletBinding()]
@@ -249,20 +255,21 @@ function GetHoursForWorkDay
     
     $Hours = 0
     
-    if($Script:HolidaysHashTable.ContainsKey($Day.ToString("MM/dd/yyyy")) -eq $False)
+    if($Script:HolidaysHashTable.ContainsKey($Day.ToString("MM/dd/yyyy")) -eq $False) #Only continue if not a federal holiday.
     {
         if($Script:InaugurationHoliday -eq $False -or
-           $Script:InaugurationDayHashTable.ContainsKey($Day.ToString("MM/dd/yyyy")) -eq $False)
+           $Script:InaugurationDayHashTable.ContainsKey($Day.ToString("MM/dd/yyyy")) -eq $False) #Only continue if not entitled to a holiday on Inauguration Day or the day argument isn't an Inauguration Day.
         {
-            $DayOfPayPeriod = (($Day - $Script:BeginningOfPayPeriod).Days % 14) + 1
+            $DayOfPayPeriod = (($Day - $Script:BeginningOfPayPeriod).Days % 14) + 1 #Figure out what day of the pay period it is. For example, the first Sunday in a pay period is day 1, the Saturday is day 7.
 
-            $Hours = $Script:WorkSchedule.("PayPeriodDay" + $DayOfPayPeriod)
+            $Hours = $Script:WorkSchedule.("PayPeriodDay" + $DayOfPayPeriod) #Access the hash table of the work schedule to get the number of hours worked that day.
         }
     }
     
     return $Hours
 }
 
+#Returns the leave year end date for a calendar year.
 function GetLeaveYearEndForDate
 {
     [CmdletBinding()]
@@ -271,11 +278,12 @@ function GetLeaveYearEndForDate
         [parameter(Mandatory=$True)] $Date
     )
 
-    $Year = (GetBeginningOfPayPeriodForDate -Date $Date).Year
+    $Year = (GetBeginningOfPayPeriodForDate -Date $Date).Year #Get the year that the current pay period started on.
     
-    return (GetEndingOfPayPeriodForDate -Date (Get-Date -Year $Year -Month 12 -Day 31).Date)
+    return (GetEndingOfPayPeriodForDate -Date (Get-Date -Year $Year -Month 12 -Day 31).Date) #Get the ending of the pay period for the date on 31 Dec of the calculated year.
 }
 
+#Returns the last day to schedule annual leave to be eligible to have it restored if you forfeit it for specific reasons.
 function GetLeaveYearScheduleDeadline
 {
     [CmdletBinding()]
@@ -287,13 +295,14 @@ function GetLeaveYearScheduleDeadline
     return $Date.AddDays(-42) #42 Days is the day before the start of the third biweekly pay period prior to the end of the leave year.
 }
 
+#Checks for updates to this script by reading the HTML of the GitHub page and using RegEx to check the version number listed at the beginning of the script text. Done this way so you don't need any GitHub dependencies or packages installed.
 function GetGitHubVersion
 {
     try
     {
         Write-Host "Checking version against online repository."
         
-        $GitHubContent = (Invoke-WebRequest -DisableKeepAlive -Uri $Script:RepoWebsite -UserAgent $Script:EdgeUserAgent).Content
+        $GitHubContent = (Invoke-WebRequest -DisableKeepAlive -Uri $Script:RepoWebsite -UserAgent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36").Content #Needs a custom user agent so GitHub thinks you're accessing it from a web browser, not command line. Command line requires using the API and needs special authentication.
         
         #RegEx Matches
         #Literal text              Script:Version
@@ -304,7 +313,7 @@ function GetGitHubVersion
         #Matches literal text and escaped chars              \\"\\r
         if(($GitHubContent -match 'Script:Version += \\"(.*?)\\"\\r') -eq $True)
         {
-            if($Matches[1] -ne $Script:Version)
+            if($Matches[1] -ne $Script:Version) #If the version found online doesn't match the version of this script.
             {
                 $NewVersion = $Matches[1]
                 
@@ -312,7 +321,7 @@ function GetGitHubVersion
 
                 if($Response -eq "Yes")
                 {
-                    Start-Process $Script:RepoWebsite
+                    Start-Process $Script:RepoWebsite #Open the website.
                 }
             }
         }
@@ -324,11 +333,12 @@ function GetGitHubVersion
 
         if($Response -eq "Yes")
         {
-            Start-Process $Script:RepoWebsite
+            Start-Process $Script:RepoWebsite #Open the website.
         }
     }
 }
 
+#Populates the two holiday hash tables with the dates and names of the holidays.
 function GetOpmHolidaysForYears
 {
     $BeginningYear = ($Script:BeginningOfPayPeriod).Year
@@ -348,7 +358,7 @@ function GetOpmHolidaysForYears
         $Failed = $True
     }
 
-    for($TargetYear = $BeginningYear; $TargetYear -le $EndingYear; $TargetYear++)
+    for($TargetYear = $BeginningYear; $TargetYear -le $EndingYear; $TargetYear++) #Loop through the years.
     {
         $YearBeginningIndex = $Null
         $YearEndingIndex    = $Null
@@ -356,6 +366,8 @@ function GetOpmHolidaysForYears
 
         try
         {
+            #This if else statement is doing the HTML parsing of the website content. It's just looking for common strings in the website design.
+
             if(($HolidayContent -match "<section class=`"tab-content`" title=`"$TargetYear`">") -eq $True) #If the year is in the tab list and not under Historical Data.
             {
                 $YearBeginningIndex = $HolidayContent.IndexOf("<section class=`"tab-content`" title=`"$TargetYear`">")
@@ -368,12 +380,12 @@ function GetOpmHolidaysForYears
                 $YearBeginningIndex = $HolidayContent.IndexOf("<table class=`"DataTable HolidayTable`"><caption>$TargetYear Holiday Schedule")
                 $YearEndingIndex = $HolidayContent.IndexOf("<p class=`"top`"><a href=`"#content`">Back to top</a></p>", $YearBeginningIndex)
 
-                if($YearEndingIndex -eq -1)
+                if($YearEndingIndex -eq -1) #This is triggered on the oldest year since it doesn't contain a "Back to top" link.
                 {
                     $YearEndingIndex = $HolidayContent.LastIndexOf("</p>") + 4 #The + 4 is so we get the "</p>" so every holiday content we get should be identical for further processing.
                 }
 
-                $YearContent = $HolidayContent.Substring($YearBeginningIndex, ($YearEndingIndex - $YearBeginningIndex))
+                $YearContent = $HolidayContent.Substring($YearBeginningIndex, ($YearEndingIndex - $YearBeginningIndex)) #Get just the HTML content for the year we are currently on in the loop.
             }
         }
 
@@ -396,7 +408,7 @@ function GetOpmHolidaysForYears
         {
             foreach($Line in $HolidayList)
             {
-                if($HolidayList.IndexOf($Line) % 2 -eq 0) #So we only get the actual dates, not which holiday it is (while useful for humans, not useful for the script)
+                if($HolidayList.IndexOf($Line) % 2 -eq 0) #So we only get the actual dates, not which holiday it is (we want the date as the hashtable key and the holiday name as the value)
                 {
                     $ModifiedLine = $Line.ToString().Replace("<td>", "").Replace("</td>", "").Trim() #Get rid of the additional HTML tags
 
@@ -405,7 +417,7 @@ function GetOpmHolidaysForYears
                         $ModifiedLine = $ModifiedLine.Substring(0, ($ModifiedLine.IndexOf("<"))).Trim() #If there are any notes on the date marked with an *, clear them out
                     }
 
-                    $ModifiedLine = $ModifiedLine.Substring($ModifiedLine.IndexOf(" ") + 1) #Gets rid of the day of the week in front.
+                    $ModifiedLine = $ModifiedLine.Substring($ModifiedLine.IndexOf(" ") + 1) #Gets rid of the day of the week in front. Don't need it for parsing the date.
 
                     if(($HolidayList.IndexOf($Line) -eq 0) -and ($Line.ToString().Contains("December"))) #Sometimes OPM includes New Years in the previous year because it falls on a Saturday, so the holiday is given on a Friday.
                     {
@@ -419,27 +431,27 @@ function GetOpmHolidaysForYears
                         $ModifiedLine += ", $TargetYear" #Add the year at the end
                     }
 
-                    if($ModifiedLine -match "\w* \d{2}, \d{4}, \d{4}") #Some of the entries rarely have the year already listed in the date, so we need to strip that off.
+                    if($ModifiedLine -match "\w* \d{2}, \d{4}, \d{4}") #Some of the entries rarely have the year already listed in the date, so we need to strip that off, or else it'll have two years to try to parse.
                     {
                         $ModifiedLine = $ModifiedLine.Substring(0, $ModifiedLine.Length - 6) #Trim off the year, space, and comma.
                     }
 
-                    $DateObject = Get-Date $ModifiedLine
+                    $DateObject = Get-Date $ModifiedLine #Parse the date.
 
-                    $DateString = $DateObject.ToString("MM/dd/yyyy")
+                    $DateString = $DateObject.ToString("MM/dd/yyyy") #Put it in the format the rest of the script uses.
 
-                    if($HolidaysHashTable.Contains($DateString) -eq $False)
+                    if($HolidaysHashTable.Contains($DateString) -eq $False) #To prevent adding duplicate dates.
                     {
-                        $HolidayNameString = $HolidayList[$HolidayList.IndexOf($Line) + 1].ToString().Replace("<td>", "").Replace("</td>", "").Trim()
+                        $HolidayNameString = $HolidayList[$HolidayList.IndexOf($Line) + 1].ToString().Replace("<td>", "").Replace("</td>", "").Trim() #NOW we get the holiday name.
 
-                        if($HolidayNameString.ToLower().Contains("inauguration") -eq $True)
+                        if($HolidayNameString.ToLower().Contains("inauguration") -eq $True) #Separate out the Inauguration Holidays.
                         {
-                            $InaugurationDayHashTable[$DateString] = $HolidayNameString
+                            $InaugurationDayHashTable[$DateString] = $HolidayNameString #Add to the Inaugruation Day hashtable.
                         }
 
                         else
                         {
-                            $HolidaysHashTable[$DateString] = $HolidayNameString
+                            $HolidaysHashTable[$DateString] = $HolidayNameString #Add to the normal holiday hashtable.
                         }
                     }
                 }
@@ -453,11 +465,12 @@ function GetOpmHolidaysForYears
     }
 }
 
+#Returns the number of sick leave hours to be accrued per pay period.
 function GetSickLeaveAccrualHours
 {
     $AccruedHours = 4
 
-    if($Script:EmployeeType -eq "Part-Time")
+    if($Script:EmployeeType -eq "Part-Time") #If you're part-time it's based on hours worked, otherwise it's just 4.
     {
         $AccruedHours = $Script:WorkHoursPerPayPeriod / 20
     }
@@ -465,6 +478,7 @@ function GetSickLeaveAccrualHours
     return $AccruedHours
 }
 
+#Sets the script variable of how many hours are worked per pay period based on what the user enters in settings.
 function SetWorkHoursPerPayPeriod
 {
     $Script:WorkHoursPerPayPeriod = 0
@@ -475,9 +489,10 @@ function SetWorkHoursPerPayPeriod
     }
 }
 
+#This function loads the settings from the config file and validates them.
 function LoadConfig
 {
-    if((Test-Path -Path $Script:ConfigFile) -eq $True)
+    if((Test-Path -Path $Script:ConfigFile) -eq $True) #First make sure the file exists.
     {
         $Errors = $False
             
@@ -485,9 +500,9 @@ function LoadConfig
         {
             $LoadedConfig = Import-Clixml -Path $Script:ConfigFile
 
-            $LeaveNameHashTable = @{}
+            $LeaveNameHashTable = @{} #Create a hash table for the names of leave so we can use them for the leave banks of the projected leave.
 
-            if($LoadedConfig.GetType().Name -eq "Object[]")
+            if($LoadedConfig.GetType().Name -eq "Object[]") #Check that the file is an array.
             {
                 if($LoadedConfig[0] -is [DateTime]) #Load LastLaunchedDate DateTime
                 {
@@ -950,6 +965,7 @@ function LoadConfig
     }
 }
 
+#Give it a string and a number. Returns the string with an S if the number provided isn't 1. For example, give it "day" and "2" and it'll return "days".
 function NumberGetsLetterS($String, $Number)
 {
     if($Number -ne 1)
@@ -960,6 +976,7 @@ function NumberGetsLetterS($String, $Number)
     return $String
 }
 
+#This is a funcion that appends text to a RichTextBox based on the arguments passed to it.
 function RichTextBoxAppendText
 {
     [CmdletBinding()]
@@ -973,14 +990,17 @@ function RichTextBoxAppendText
         [parameter(Mandatory=$False)] $FontStyle
     )
 
-    $RichTextBox.SelectionStart  = $RichTextBox.TextLength
-    $RichTextBox.SelectionLength = 0
+    $RichTextBox.SelectionStart  = $RichTextBox.TextLength #Put the cursor at the end of the current text.
+    $RichTextBox.SelectionLength = 0 #Select 0 characters.
 
+    #Set defaults.
     $RichTextBox.SelectionAlignment = "Left"
     $RichTextBox.SelectionColor     = "Black"
 
     $NewFontSize  = $RichTextBox.Font.Size
     $NewFontStyle = $RichTextBox.Font.Style
+
+    #Depending what is passed, modify the text to be added.
 
     if($Alignment -ne $Null) #Can be "Center", "Left", or "Right"
     {
@@ -1003,7 +1023,7 @@ function RichTextBoxAppendText
     }
 
     if($FontSize -ne $Null -or
-       $FontStyle -ne $Null)
+       $FontStyle -ne $Null) #Handles changing fonts or sizes.
     {
         $RichTextBox.SelectionFont = New-Object System.Drawing.Font($RichTextBox.Font.Name, $NewFontSize, [System.Drawing.FontStyle]::$NewFontStyle)
     }
@@ -1011,6 +1031,7 @@ function RichTextBoxAppendText
     $RichTextBox.AppendText($Text)
 }
 
+#This function puts the items in the Leave Balances list box so the user can view/select them.
 function PopulateLeaveBalanceListBox
 {
     $LeaveBalanceListBox = $Script:MainForm.Controls["LeavePanel"].Controls["BalanceListBox"]
@@ -1032,14 +1053,14 @@ function PopulateLeaveBalanceListBox
 
         if(($LeaveItem.Name -eq "Annual" -or
             $LeaveItem.Name -eq "Sick") -and
-            $LeaveItem.Threshold -ne 0)
+            $LeaveItem.Threshold -ne 0) #Add the threshold if it's not 0.
         {
             $String += "`tThreshold: " + $LeaveItem.Threshold
         }
 
         if($LeaveItem.Name -ne "Annual" -and
            $LeaveItem.Name -ne "Sick" -and
-           $LeaveItem.Expires -eq $True)
+           $LeaveItem.Expires -eq $True) #Add the expiration date if the leave expires.
         {
             $ExpireDate = $LeaveItem.ExpiresOn.ToString("MM/dd/yyyy")
 
@@ -1052,27 +1073,31 @@ function PopulateLeaveBalanceListBox
     $LeaveBalanceListBox.EndUpdate()
 }
 
+#This function handles all of the output of the projection.
 function PopulateOutputFormRichTextBox
 {
     $RichTextBox = $Script:OutputForm.Controls["OutputRichTextBox"]
     
-    $LeaveBalancesCopy   = New-Object System.Collections.Generic.List[PSCustomObject]
-    $LeaveExpiresOnList  = New-Object System.Collections.Generic.List[PSCustomObject]
-    $ProjectedLeaveIndex = 0
+    $LeaveBalancesCopy   = New-Object System.Collections.Generic.List[PSCustomObject] #Make an object to hold a copy of the leave balances.
+    $LeaveExpiresOnList  = New-Object System.Collections.Generic.List[PSCustomObject] #Make an object to hold a list of all the dates that leave expires on.
+    $ProjectedLeaveIndex = 0 #A counter to keep track of which projected leave items have already been accounted for while cycling through the days.
     $EndOfPayPeriod      = GetEndingOfPayPeriodForDate -Date $Script:BeginningOfPayPeriod
     $LeaveYearEnd        = GetLeaveYearEndForDate -Date $EndOfPayPeriod
 
+    #Get the starting highs/lows of the annual and sick leaves.
     $AnnualHigh = $Script:LeaveBalances[0].Balance
     $AnnualLow  = $Script:LeaveBalances[0].Balance
     $SickHigh   = $Script:LeaveBalances[1].Balance
     $SickLow    = $Script:LeaveBalances[1].Balance
 
+    #Get copies of the decimal values too.
     $ProjectionAnnualDecimal = $Script:AnnualDecimal
     $ProjectionSickDecimal   = $Script:SickDecimal
 
+    #Set this variable for if it's in reach goal mode.
     $GoalsMet = $False
 
-    foreach($LeaveBalance in $Script:LeaveBalances)
+    foreach($LeaveBalance in $Script:LeaveBalances) #Copy the leave balances into the object we created and also copy the dates that leave expires.
     {
         $LeaveBalancesCopy.Add($LeaveBalance.PSObject.Copy())
 
@@ -1084,6 +1109,7 @@ function PopulateOutputFormRichTextBox
     
     $StartDate = $Script:BeginningOfPayPeriod
 
+    #This determines the end date to stop the loop depending on which mode is running.
     if($Script:ProjectOrGoal -eq "Project")
     {
         $EndDate = GetEndingOfPayPeriodForDate -Date $Script:ProjectToDate
@@ -1121,10 +1147,10 @@ function PopulateOutputFormRichTextBox
     RichTextBoxAppendText -RichTextBox $RichTextBox -Text ($LeaveBalancesCopy[0].Name + ":`t`t" + $LeaveBalancesCopy[0].Balance)
     RichTextBoxAppendText -RichTextBox $RichTextBox -Text ("`n" + $LeaveBalancesCopy[1].Name + ":`t`t" + $LeaveBalancesCopy[1].Balance)
 
-    #If projecting to date, append the rest of the balances and their expiration if they expire.
+    #If projecting to date, append the rest of the balances and their expiration if they expire. Reach goal mode is only concerned with annual/sick.
     if($Script:ProjectOrGoal -eq "Project")
     {
-        for($Index = 2; $Index -lt $LeaveBalancesCopy.Count; $Index++)
+        for($Index = 2; $Index -lt $LeaveBalancesCopy.Count; $Index++) #Starts at index 2 because annual and sick are indices 0 and 1.
         {
             $String = "`n" + $LeaveBalancesCopy[$Index].Name + ":`t"
 
@@ -1151,11 +1177,11 @@ function PopulateOutputFormRichTextBox
 
         foreach($LeaveItem in $Script:MainForm.Controls["LeavePanel"].Controls["ProjectedListBox"].CheckedItems)
         {
-            $LeaveBankName = $Script:ProjectedLeave[$Script:MainForm.Controls["LeavePanel"].Controls["ProjectedListBox"].Items.IndexOf($LeaveItem)].LeaveBank.ToLower().Trim()
+            $LeaveBankName = $Script:ProjectedLeave[$Script:MainForm.Controls["LeavePanel"].Controls["ProjectedListBox"].Items.IndexOf($LeaveItem)].LeaveBank.ToLower().Trim() #Get the leave bank name based on what index is being worked with.
             
             if($LeaveBankName -eq "annual" -or
                $LeaveBankName -eq "sick" -or
-               $Script:ProjectOrGoal -eq "Project")
+               $Script:ProjectOrGoal -eq "Project") #Add annual/sick and only add the others if it's in Project mode.
             {
                 RichTextBoxAppendText -RichTextBox $RichTextBox -Text ("`n" + $LeaveItem)
             }
@@ -1164,16 +1190,16 @@ function PopulateOutputFormRichTextBox
 
     if($Script:ProjectOrGoal -eq "Goal" -and
         $LeaveBalancesCopy[0].Balance -ge $Script:AnnualGoal -and
-        $LeaveBalancesCopy[1].Balance -ge $Script:SickGoal)
+        $LeaveBalancesCopy[1].Balance -ge $Script:SickGoal) #This is a silly check to make sure the balances aren't already above the goals set.
     {
         $GoalsMet = $True
     }
 
-    #Loop through dates to determine when to accrue leave, subtract leave from hours, etc...
+    #Primary Loop through dates and pay periods to determine when to accrue leave, subtract leave from hours, etc...
     while($EndOfPayPeriod -le $EndDate -and
           $GoalsMet -eq $False)
     {
-        if($Script:EmployeeType -ne "SES")
+        if($Script:EmployeeType -ne "SES") #Displays an alert if the accrual rate changes. Doesn't need the -ge or -le because we're dealing with the end of a pay period.
         {
             if($EndOfPayPeriod.AddDays(-14) -lt $Script:FifteenYearMark -and
                    $EndOfPayPeriod -gt $Script:FifteenYearMark)
@@ -1192,8 +1218,10 @@ function PopulateOutputFormRichTextBox
             }
         }
         
+        #This determines if leave expires this pay period. We need to check this so we can alert if unused leave expires.
         $LeaveExpiresThisPayPeriod = $False
 
+        #Loop through the list we made to check if any leave expires.
         foreach($Expire in $LeaveExpiresOnList)
         {
             if($Expire -gt $EndOfPayPeriod.AddDays(-14) -and
@@ -1204,57 +1232,57 @@ function PopulateOutputFormRichTextBox
         }
 
         if($Script:ProjectedLeave[$ProjectedLeaveIndex].StartDate -le $EndOfPayPeriod -or
-           $LeaveExpiresThisPayPeriod -eq $True) #Need to simulate progressing the days one at a time for two weeks since something happens.
+           $LeaveExpiresThisPayPeriod -eq $True) #Need to simulate progressing the days one at a time for two weeks since leave either is taken or expires.
         {
             $Date = GetBeginningOfPayPeriodForDate -Date $EndOfPayPeriod
             
-            $ProjectedLeaveEndIndex = $ProjectedLeaveIndex
+            $ProjectedLeaveEndIndex = $ProjectedLeaveIndex #We need to get an ending location too, so set this variable and adjust it.
 
             while($ProjectedLeaveEndIndex -lt $Script:ProjectedLeave.Count -and
-                  $Script:ProjectedLeave[$ProjectedLeaveEndIndex].StartDate -le $EndOfPayPeriod)
+                  $Script:ProjectedLeave[$ProjectedLeaveEndIndex].StartDate -le $EndOfPayPeriod) #Find the last leave in projected leave that is inside this pay period.
             {
                 $ProjectedLeaveEndIndex++
             }
 
-            for($Day = 0; $Day -lt 14; $Day++)
+            for($Day = 0; $Day -lt 14; $Day++) #Loop through the two weeks so we can get a snapshot of each day.
             {
-                for($ProjectedIndex = $ProjectedLeaveIndex; $ProjectedIndex -lt $ProjectedLeaveEndIndex; $ProjectedIndex++)
+                for($ProjectedIndex = $ProjectedLeaveIndex; $ProjectedIndex -lt $ProjectedLeaveEndIndex; $ProjectedIndex++) #Loop through each projected leave item that happens in this pay period.
                 {
                     if($Script:ProjectedLeave[$ProjectedIndex].Included -eq $True) #Only count the projeted leave if it's included (checked).
                     {
                         if($Script:ProjectedLeave[$ProjectedIndex].HoursHashTable.ContainsKey($Date.ToString("MM/dd/yyyy")) -eq $True -and
-                           $Script:ProjectedLeave[$ProjectedIndex].HoursHashTable[$Date.ToString("MM/dd/yyyy")] -gt 0)
+                           $Script:ProjectedLeave[$ProjectedIndex].HoursHashTable[$Date.ToString("MM/dd/yyyy")] -gt 0) #This is so we can account for each day of leave in the projected leave. Only applies to items that have this day with more than 0 hours taken.
                         {
                             $BalanceFound = $False
                             $BalanceIndex = 0
 
                             while($BalanceIndex -lt $LeaveBalancesCopy.Count -and
-                                  $LeaveBalancesCopy[$BalanceIndex].Name -ne $Script:ProjectedLeave[$ProjectedIndex].LeaveBank)
+                                  $LeaveBalancesCopy[$BalanceIndex].Name -ne $Script:ProjectedLeave[$ProjectedIndex].LeaveBank) #Find the leave balance that matches the leave bank.
                             {
                                 $BalanceIndex++
                             }
 
                             if($BalanceIndex -lt $LeaveBalancesCopy.Count -and
-                               $LeaveBalancesCopy[$BalanceIndex].Name -eq $Script:ProjectedLeave[$ProjectedIndex].LeaveBank)
+                               $LeaveBalancesCopy[$BalanceIndex].Name -eq $Script:ProjectedLeave[$ProjectedIndex].LeaveBank) #Continuation of the above while loop. This is to ensure we actually found a leave balance that matches.
                             {
                                 $BalanceFound = $True
                             }
 
                             if($BalanceFound -eq $True) #This is where the leave is subtracted off the balance.
                             {
-                                $BalanceBeforeSubtraction = $LeaveBalancesCopy[$BalanceIndex].Balance
+                                $BalanceBeforeSubtraction = $LeaveBalancesCopy[$BalanceIndex].Balance #This is used later to alert when dropping below a threshold so you only get alerted if you were above it and then below it, not if you keep going lower.
                             
-                                $LeaveBalancesCopy[$BalanceIndex].Balance -= $Script:ProjectedLeave[$ProjectedIndex].HoursHashTable[$Date.ToString("MM/dd/yyyy")]
+                                $LeaveBalancesCopy[$BalanceIndex].Balance -= $Script:ProjectedLeave[$ProjectedIndex].HoursHashTable[$Date.ToString("MM/dd/yyyy")] #Subtract the leave out of the copied leave balance list.
 
                                 while($LeaveBalancesCopy[$BalanceIndex].Balance -lt 0 -and
                                      ($BalanceIndex + 1) -lt $LeaveBalancesCopy.Count -and
-                                      $LeaveBalancesCopy[$BalanceIndex + 1].Name -eq $LeaveBalancesCopy[$BalanceIndex].Name)
+                                      $LeaveBalancesCopy[$BalanceIndex + 1].Name -eq $LeaveBalancesCopy[$BalanceIndex].Name) #This handles when there are multiple leave balances with the same name. They're already sorted, so this just subtracts off the one that expires first, then second, etc... Deletes ones that are now empty but leaves the last one, even if negative.
                                 {
                                     $LeaveBalancesCopy[$BalanceIndex + 1].Balance += $LeaveBalancesCopy[$BalanceIndex].Balance  #Take that negative balance off of the next entry with the same name.
                                 
                                     $Count = 0
 
-                                    foreach($LeaveBalance in $LeaveBalancesCopy)
+                                    foreach($LeaveBalance in $LeaveBalancesCopy) #See how many leave balances match the expiration date of the balance index we found earlier.
                                     {
                                         if($LeaveBalance.Expires -eq $True -and
                                            $LeaveBalance.ExpiresOn -eq $LeaveBalancesCopy[$BalanceIndex].ExpiresOn)
@@ -1263,15 +1291,15 @@ function PopulateOutputFormRichTextBox
                                         }
                                     }
 
-                                    if($Count -gt 1)
+                                    if($Count -gt 1) #If more than one, remove that date from our expires list since that date is now "passed". It's more than one since there might have been multiples added if two types of leave had the same expiring date but different names.
                                     {
                                         $LeaveExpiresOnList.Remove($LeaveBalance.ExpiresOn.ToString("MM/dd/yyyy"))
                                     }
 
-                                    $LeaveBalancesCopy.RemoveAt($BalanceIndex)
+                                    $LeaveBalancesCopy.RemoveAt($BalanceIndex) #Delete the now 0 or negative balance out of the copy list.
                                 }
 
-                                if($Script:DisplayHighsAndLows -eq $True)
+                                if($Script:DisplayHighsAndLows -eq $True) #Keeps track of the lows here for annual/sick leave. Nothing fancy.
                                 {
                                     if($LeaveBalancesCopy[0].Balance -lt $AnnualLow)
                                     {
@@ -1287,11 +1315,11 @@ function PopulateOutputFormRichTextBox
                                 if($Script:DisplayAfterEachLeave -eq $True -and
                                   ($Script:ProjectOrGoal -eq "Project" -or
                                    $LeaveBalancesCopy[$BalanceIndex].Name -eq "Annual" -or
-                                   $LeaveBalancesCopy[$BalanceIndex].Name -eq "Sick"))
+                                   $LeaveBalancesCopy[$BalanceIndex].Name -eq "Sick")) #This displays the amount of hours taken off the balance and the remaining balance. Only shows if in Project mode, or if type is annual/sick.
                                 {
                                     $LeaveName = $LeaveBalancesCopy[$BalanceIndex].Name
 
-                                    if($LeaveName.ToLower().Contains("leave") -eq $False)
+                                    if($LeaveName.ToLower().Contains("leave") -eq $False) #Just adding in the word "Leave" to make the output easier to read.
                                     {
                                        $LeaveName += " Leave"
                                     }
@@ -1306,14 +1334,14 @@ function PopulateOutputFormRichTextBox
                                    $LeaveBalancesCopy[$BalanceIndex].Name -eq "Sick" -and
                                   ($LeaveBalancesCopy[$BalanceIndex].Threshold -gt 0 -and
                                    $BalanceBeforeSubtraction -ge $LeaveBalancesCopy[$BalanceIndex].Threshold -and
-                                   $LeaveBalancesCopy[$BalanceIndex].Balance -lt $LeaveBalancesCopy[$BalanceIndex].Threshold))
+                                   $LeaveBalancesCopy[$BalanceIndex].Balance -lt $LeaveBalancesCopy[$BalanceIndex].Threshold)) #Threshold alerting section. Only alerts when balance was above threshold and then dropped below.
                                 {
                                     $String = "`n`n" + $LeaveBalancesCopy[$BalanceIndex].Name + " Leave balance is " + $LeaveBalancesCopy[$BalanceIndex].Balance + " which is below the set threshold of " + $LeaveBalancesCopy[$BalanceIndex].Threshold + " after taking leave on " + $Date.ToString("MM/dd/yyyy") + "."
                                 
                                     RichTextBoxAppendText -RichTextBox $RichTextBox -Text $String -Color "Blue"
                                 }
 
-                                if($LeaveBalancesCopy[$BalanceIndex].Balance -lt 0)
+                                if($LeaveBalancesCopy[$BalanceIndex].Balance -lt 0) #Warning if any balance drops below 0.
                                 {
                                     $LeaveName = $LeaveBalancesCopy[$BalanceIndex].Name
 
@@ -1331,7 +1359,7 @@ function PopulateOutputFormRichTextBox
                     }
                 }
 
-                if($LeaveExpiresThisPayPeriod -eq $True)
+                if($LeaveExpiresThisPayPeriod -eq $True) #If one or more of the leave balances expires this pay period.
                 {
                     $Index = 0
                     
@@ -1339,7 +1367,7 @@ function PopulateOutputFormRichTextBox
                     {
                         if($LeaveBalancesCopy[$Index].Expires -eq $True -and
                            $LeaveBalancesCopy[$Index].Balance -gt 0 -and
-                           $LeaveBalancesCopy[$Index].ExpiresOn -eq $Date)
+                           $LeaveBalancesCopy[$Index].ExpiresOn -eq $Date) #Only print if the leave expires on the date in the loop and it has a balance.
                         {
                             $LeaveName = $LeaveBalancesCopy[$Index].Name
 
@@ -1362,18 +1390,19 @@ function PopulateOutputFormRichTextBox
                     }
                 }
                 
-                $Date = $Date.AddDays(1)
+                $Date = $Date.AddDays(1) #Increment the date in this counter.
             }
 
-            $ProjectedLeaveIndex = $ProjectedLeaveEndIndex
+            $ProjectedLeaveIndex = $ProjectedLeaveEndIndex #Set the new beginning index for the next loop.
         }
 
+        #Accrue the annual and sick leave hours.
         $LeaveBalancesCopy[0].Balance += (GetAnnualLeaveAccrualHours -PayPeriod $EndOfPayPeriod)
         $LeaveBalancesCopy[1].Balance += GetSickLeaveAccrualHours
 
-        if($EndOfPayPeriod -eq $LeaveYearEnd)
+        if($EndOfPayPeriod -eq $LeaveYearEnd) #If it's the leave year end, check stuff and set the variable to the next leave year end.
         {
-            if($LeaveBalancesCopy[0].Balance -gt $Script:LeaveCeiling)
+            if($LeaveBalancesCopy[0].Balance -gt $Script:LeaveCeiling) #If over the use/lose, show a warning and set the balance and decimal value to the ceiling.
             {
                 $String  = "`n`n" + ($LeaveBalancesCopy[0].Balance - $Script:LeaveCeiling) + " hours of Annual Leave will be forfeited on " + $LeaveYearEnd.ToString("MM/dd/yyyy") + " which is the Leave Year End. "
                 $String += "The Leave Year Schedule Deadline for the " + (GetBeginningOfPayPeriodForDate -Date $LeaveYearEnd).Year + " Leave Year is " + (GetLeaveYearScheduleDeadline -Date $LeaveYearEnd).ToString("MM/dd/yyyy") + " in order for the leave to be eligible to be restored in certain circumstances."
@@ -1385,14 +1414,13 @@ function PopulateOutputFormRichTextBox
                 if($Script:EmployeeType -eq "Part-Time")
                 {
                     $ProjectionAnnualDecimal = 0.0
-                    $ProjectionSickDecimal   = 0.0
                 }
             }
             
             $LeaveYearEnd = GetLeaveYearEndForDate -Date $LeaveYearEnd.AddDays(1) #Get the next leave year end and store it. 
         }
 
-        if($Script:DisplayHighsAndLows -eq $True)
+        if($Script:DisplayHighsAndLows -eq $True) #Keep track of the annual/sick leave highs. Nothing fancy.
         {
             if($LeaveBalancesCopy[0].Balance -gt $AnnualHigh)
             {
@@ -1404,7 +1432,8 @@ function PopulateOutputFormRichTextBox
                 $SickHigh = $LeaveBalancesCopy[1].Balance
             }
         }
-
+        
+        #Check if the goals were met so we can exit the loop.
         if($Script:ProjectOrGoal -eq "Goal" -and
            $LeaveBalancesCopy[0].Balance -ge $Script:AnnualGoal -and
            $LeaveBalancesCopy[1].Balance -ge $Script:SickGoal)
@@ -1412,6 +1441,7 @@ function PopulateOutputFormRichTextBox
             $GoalsMet = $True
         }
 
+        #If displaying after each pay period, print the balances.
         if($Script:DisplayAfterEachPP -eq $True -and
            $EndOfPayPeriod -lt $EndDate -and
            $GoalsMet -eq $False)
@@ -1422,19 +1452,19 @@ function PopulateOutputFormRichTextBox
             #Add Annual with color
             $AnnualString = $LeaveBalancesCopy[0].Name + ":`t`t" + [Math]::Floor($LeaveBalancesCopy[0].Balance)
 
-            if($LeaveBalancesCopy[0].Balance -lt 0)
+            if($LeaveBalancesCopy[0].Balance -lt 0) #Annual balance negative warning.
             {
                 RichTextBoxAppendText -RichTextBox $RichTextBox -Text $AnnualString -Color "Red"
             }
 
-            elseif($LeaveBalancesCopy[0].Balance -gt $Script:LeaveCeiling)
+            elseif($LeaveBalancesCopy[0].Balance -gt $Script:LeaveCeiling) #Annual balance above ceiling warning.
             {
                 $AnnualString += "`tBalance is greater than your Annual Leave ceiling."
         
                 RichTextBoxAppendText -RichTextBox $RichTextBox -Text $AnnualString -Color "Blue"
             }
 
-            else
+            else #Print the annual balance.
             {
                 RichTextBoxAppendText -RichTextBox $RichTextBox -Text $AnnualString
             }
@@ -1442,12 +1472,12 @@ function PopulateOutputFormRichTextBox
             #Add Sick with color
             $SickString = "`n" + $LeaveBalancesCopy[1].Name + ":`t`t" + [Math]::Floor($LeaveBalancesCopy[1].Balance)
 
-            if($LeaveBalancesCopy[1].Balance -lt 0)
+            if($LeaveBalancesCopy[1].Balance -lt 0) #Sick balance negative warning.
             {
                 RichTextBoxAppendText -RichTextBox $RichTextBox -Text $SickString -Color "Red"
             }
 
-            else
+            else #Print the sick balance.
             {
                 RichTextBoxAppendText -RichTextBox $RichTextBox -Text $SickString
             }
@@ -1455,7 +1485,7 @@ function PopulateOutputFormRichTextBox
             #If projecting to date, append the rest of the balances and their expiration if they expire.
             if($Script:ProjectOrGoal -eq "Project")
             {
-                for($Index = 2; $Index -lt $LeaveBalancesCopy.Count; $Index++)
+                for($Index = 2; $Index -lt $LeaveBalancesCopy.Count; $Index++) #Start at 2 because 0 and 1 are already printed (annual and sick).
                 {
                     if($LeaveBalancesCopy[$Index].Expires -eq $False -or
                       ($LeaveBalancesCopy[$Index].Expires -eq $True -and
@@ -1475,12 +1505,12 @@ function PopulateOutputFormRichTextBox
                             $String += "`tExpires: " + $LeaveBalancesCopy[$Index].ExpiresOn.ToString("MM/dd/yyyy")
                         }
 
-                        if($LeaveBalancesCopy[$Index].Balance -lt 0)
+                        if($LeaveBalancesCopy[$Index].Balance -lt 0) #Warning if negative
                         {
                             RichTextBoxAppendText -RichTextBox $RichTextBox -Text $String -Color "Red"
                         }
 
-                        else
+                        else #Print it if not negative.
                         {
                             RichTextBoxAppendText -RichTextBox $RichTextBox -Text $String
                         }
@@ -1489,7 +1519,7 @@ function PopulateOutputFormRichTextBox
             }
         }
 
-        $EndOfPayPeriod = $EndOfPayPeriod.AddDays(14)
+        $EndOfPayPeriod = $EndOfPayPeriod.AddDays(14) #Move on to the next pay period!
     }
 
     #Once we exit the loop, set the EndOfPayPeriod back to what it should be.
@@ -1868,7 +1898,6 @@ function UpdateExistingBalancesAndProjectedLeaveAtLaunch
                     if($Script:EmployeeType -eq "Part-Time")
                     {
                         $Script:AnnualDecimal = 0.0
-                        $Script:SickDecimal   = 0.0
                     }
                 }
                 
